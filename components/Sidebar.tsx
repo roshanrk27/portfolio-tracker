@@ -7,9 +7,10 @@ export default function Sidebar() {
   const pathname = usePathname()
 
   const navItems = [
-    { href: '/dashboard', label: 'Dashboard', icon: '��' },
-    { href: '/dashboard/portfolio', label: 'Portfolio', icon: '💼' },
-    { href: '/upload', label: 'Upload Files', icon: '📁' },
+    { href: '/dashboard', label: 'Dashboard', icon: '📊' },
+    { href: '/dashboard/portfolio', label: 'Mutual Funds', icon: '💼' },
+    { href: '/dashboard/stocks', label: 'Stocks', icon: '📈' },
+    { href: '/dashboard/nps', label: 'NPS', icon: '🏛️' },
   ]
 
   return (

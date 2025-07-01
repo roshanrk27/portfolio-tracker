@@ -669,44 +669,272 @@ export async function getGoalsWithXIRR(userId: string) {
 }
 
 /**
- * Get all goals with both progress and XIRR calculations
+ * Get all goals with progress and XIRR (excluding stocks and NPS from XIRR)
  */
 export async function getGoalsWithProgressAndXIRR(userId: string) {
   try {
     const goals = await getGoals(userId)
-    const goalsWithProgressAndXIRR = []
+    const goalsWithProgress = []
 
     for (const goal of goals) {
-      // Get progress data
-      const progressData = await getGoalWithProgress(goal.id)
-      // Get XIRR data
-      const xirrData = await getGoalXIRR(goal.id)
+      // Get all mappings for this goal
+      const mappings = await getGoalMappings(goal.id)
       
-      if (progressData && xirrData) {
-        goalsWithProgressAndXIRR.push({
-          ...progressData,
-          xirr: xirrData.xirr,
-          xirrPercentage: xirrData.xirrPercentage,
-          formattedXIRR: xirrData.formattedXIRR,
-          xirrConverged: xirrData.converged,
-          xirrError: xirrData.error
-        })
-      } else if (progressData) {
-        // If XIRR calculation failed, still include progress data
-        goalsWithProgressAndXIRR.push({
-          ...progressData,
-          xirr: 0,
-          xirrPercentage: 0,
-          formattedXIRR: '0.00%',
-          xirrConverged: false,
-          xirrError: xirrData?.error || 'XIRR calculation failed'
-        })
+      let totalCurrentValue = 0
+      let mutualFundValue = 0
+      let stockValue = 0
+      let npsValue = 0
+      let xirrData = null
+      let mappedStocks: any[] = []
+
+      // Debug: print mappings for this goal
+      console.log('[XIRR DEBUG] Goal:', goal.name, 'Mappings:', mappings)
+
+      // Process each mapping based on source type
+      for (const mapping of mappings) {
+        if (mapping.source_type === 'mutual_fund') {
+          // Get mutual fund value from current_portfolio using exact matching
+          const { data: portfolioData } = await supabaseServer
+            .from('current_portfolio')
+            .select('current_value')
+            .eq('user_id', userId)
+            .eq('scheme_name', mapping.scheme_name)
+            .eq('folio', mapping.folio || '')
+          
+          const schemeValue = (portfolioData || []).reduce((sum, item) => sum + (parseFloat(item.current_value || '0') || 0), 0)
+          mutualFundValue += schemeValue
+          totalCurrentValue += schemeValue
+        } else if (mapping.source_type === 'stock') {
+          // Collect mapped stock info for client-side price fetch
+          if (mapping.source_id) {
+            const { data: stockData } = await supabaseServer
+              .from('stocks')
+              .select('*')
+              .eq('id', mapping.source_id)
+              .eq('user_id', userId)
+              .single()
+            if (stockData) {
+              mappedStocks.push({
+                stock_code: stockData.stock_code,
+                quantity: stockData.quantity,
+                exchange: stockData.exchange,
+                source_id: stockData.id
+              })
+              
+              // For now, we'll set a placeholder value that will be updated client-side
+              // This ensures the total includes stocks even before live prices are fetched
+              stockValue += 0 // Will be updated client-side with live prices
+              totalCurrentValue += 0 // Will be updated client-side with live prices
+            }
+          }
+        } else if (mapping.source_type === 'nps') {
+          // NPS value calculation will be implemented later
+          // For now, set to 0
+          npsValue += 0
+          totalCurrentValue += 0
+        }
       }
+
+      // Debug: print mutualFundValue for this goal
+     // console.log('[XIRR DEBUG] Goal:', goal.name, 'mutualFundValue:', mutualFundValue)
+
+      // Calculate XIRR only for mutual fund investments (exclude stocks and NPS)
+      if (mutualFundValue > 0) {
+        const mutualFundMappings = mappings.filter(m => m.source_type === 'mutual_fund')
+        const xirrTransactions = []
+        
+        for (const mapping of mutualFundMappings) {
+          const portfolioData = await getPortfolioByScheme(userId, mapping.scheme_name)
+          for (const item of portfolioData) {
+            // Get transactions for this scheme
+            console.log('[XIRR DEBUG] Fetching transactions for:', mapping.scheme_name, mapping.folio)
+            const { data: transactions } = await supabaseServer
+              .from('transactions')
+              .select('*')
+              .eq('user_id', userId)
+              .eq('scheme_name', item.scheme_name)
+              .eq('folio', item.folio)
+              .order('date', { ascending: true })
+
+            if (transactions) {
+              for (const tx of transactions) {
+                const transactionType = (tx.transaction_type || '').toLowerCase()
+                let amount = parseFloat(tx.amount || '0')
+                // Outflows (investments) are negative, inflows (redemptions) are positive
+                if (
+                  transactionType.includes('purchase') ||
+                  transactionType.includes('investment') ||
+                  transactionType.includes('dividend') ||
+                  transactionType.includes('switch in') ||
+                  transactionType.includes('shift in')
+                ) {
+                  amount = -Math.abs(amount)
+                } else if (
+                  transactionType.includes('switch out') ||
+                  transactionType.includes('redemption') ||
+                  transactionType.includes('shift out')
+                ) {
+                  amount = -Math.abs(amount)
+                }
+                // Default: treat as positive (shouldn't happen)
+                xirrTransactions.push({
+                  date: new Date(tx.date),
+                  amount: amount
+                })
+              }
+            }
+          }
+        }
+
+        // Add current value as final positive cash flow if > 0
+        if (mutualFundValue > 0) {
+          xirrTransactions.push({
+            date: new Date(),
+            amount: mutualFundValue
+          })
+        }
+
+        // DEBUG: Print xirrTransactions array
+       // console.log('[XIRR DEBUG] Goal:', goal.name, 'xirrTransactions:', xirrTransactions)
+
+        // Calculate XIRR only if we have transactions
+        if (xirrTransactions.length > 1) {
+          try {
+            // Create the proper structure for calculateGoalXIRR
+            const goalMappings = mutualFundMappings.map(m => ({
+              scheme_name: m.scheme_name,
+              folio: m.folio || ''
+            }))
+            
+            const schemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
+            const schemeCurrentValues: Record<string, number> = {}
+            
+            for (const mapping of mutualFundMappings) {
+              const key = `${mapping.scheme_name}-${mapping.folio || ''}`
+              const portfolioData = await getPortfolioByScheme(userId, mapping.scheme_name)
+              
+              // Get transactions for this scheme
+            //  console.log('[XIRR_ROSHAN] scheme: ', mapping.scheme_name)
+            //  console.log('[XIRR_ROSHAN] folio: ', mapping.folio)
+
+              const { data: transactions } = await supabaseServer
+                .from('transactions')
+                .select('*')
+                .eq('user_id', userId)
+                .eq('scheme_name', mapping.scheme_name)
+                .eq('folio', mapping.folio || '')
+                .order('date', { ascending: true })
+
+              schemeTransactions[key] = transactions || []
+              
+              schemeCurrentValues[key] = portfolioData.reduce((sum, item) => sum + (item.current_value || 0), 0)
+             
+            }
+           
+            //console.log('[XIRR DEBUG] schemeCurrentValues:', schemeCurrentValues)
+            const xirrResult = calculateGoalXIRR(goalMappings, schemeTransactions, schemeCurrentValues)
+            xirrData = {
+              xirr: xirrResult.xirr, 
+              xirrPercentage: xirrResult.xirr * 100,
+              formattedXIRR: formatXIRR(xirrResult.xirr),
+              xirrConverged: xirrResult.converged,
+              xirrError: xirrResult.error
+            }
+          } catch (error) {
+            console.error('Error calculating XIRR for goal:', goal.id, error)
+            xirrData = { xirr: null, xirrPercentage: null, formattedXIRR: 'Error', xirrConverged: false, xirrError: 'Calculation failed' }
+          }
+        }
+      }
+
+      // Ensure xirrData is always an object
+      if (!xirrData) {
+        xirrData = { xirr: null, xirrPercentage: null, formattedXIRR: null, xirrConverged: false, xirrError: null }
+      }
+
+      // Debug: print xirrData for this goal
+      console.log('[XIRR DEBUG] Goal:', goal.name, 'xirrData:', xirrData)
+
+      // Calculate progress percentage
+      const progressPercentage = goal.target_amount > 0 ? (totalCurrentValue / goal.target_amount) * 100 : 0
+      const daysRemaining = Math.ceil((new Date(goal.target_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+
+      goalsWithProgress.push({
+        ...goal,
+        current_amount: totalCurrentValue,
+        progress_percentage: progressPercentage,
+        days_remaining: daysRemaining,
+        mutual_fund_value: mutualFundValue,
+        stock_value: stockValue,
+        nps_value: npsValue,
+        mappedStocks,
+        ...xirrData
+      })
     }
 
-    return goalsWithProgressAndXIRR
+    return goalsWithProgress
   } catch (error) {
     console.error('Error in getGoalsWithProgressAndXIRR:', error)
     return []
+  }
+}
+
+// Get the latest NAV update date
+export async function getLatestNavDate() {
+  try {
+    const { data, error } = await supabaseServer
+      .from('nav_data')
+      .select('nav_date')
+      .order('nav_date', { ascending: false })
+      .limit(1)
+      .single()
+
+    console.log('🔍 DEBUG - Raw data from nav_data query:', data)
+    console.log('🔍 DEBUG - Error from nav_data query:', error)
+
+    if (error) {
+      console.error('Error fetching latest NAV date:', error)
+      return null
+    }
+
+    const result = data?.nav_date || null
+    console.log('🔍 DEBUG - Returning nav_date:', result)
+    return result
+  } catch (error) {
+    console.error('Error in getLatestNavDate:', error)
+    return null
+  }
+}
+
+// Check if NAV is up to date (latest NAV date is today or yesterday)
+export async function isNavUpToDate() {
+  try {
+    const latestNavDate = await getLatestNavDate()
+    console.log('🔍 DEBUG - Latest NAV date from DB:', latestNavDate)
+    console.log('🔍 DEBUG - Latest NAV date type:', typeof latestNavDate)
+
+    if (!latestNavDate) {
+      console.log('🔍 DEBUG - No NAV date found, returning false')
+      return false
+    }
+
+    // Get today's date as YYYY-MM-DD string in local timezone
+    const today = new Date()
+    const todayString = today.toLocaleDateString('en-CA') // YYYY-MM-DD
+    const todayDate = new Date(todayString)
+    const navDate = new Date(latestNavDate)
+
+    // Calculate the difference in days
+    const diffMs = todayDate.getTime() - navDate.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    console.log('🔍 DEBUG - Date diff in days:', diffDays)
+
+    // Consider up to date if NAV date is today or yesterday (diffDays 0 or 1)
+    const isUpToDate = diffDays >= 0 && diffDays <= 1
+    console.log('🔍 DEBUG - isUpToDate (<=1 day):', isUpToDate)
+    return isUpToDate
+  } catch (error) {
+    console.error('Error checking if NAV is up to date:', error)
+    return false
   }
 } 

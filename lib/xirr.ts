@@ -208,6 +208,9 @@ export function calculateGoalXIRR(
     const key = `${mapping.scheme_name}-${mapping.folio}`
     const transactions = schemeTransactions[key] || []
     const currentValue = schemeCurrentValues[key] || 0
+    //console.log('[XIRR DEBUG_RK] Key:', key)
+    //console.log('[XIRR DEBUG_RK] Transactions:', transactions)
+    //console.log('[XIRR DEBUG_RK] Current Value:', currentValue)
 
     // Add transactions for this scheme (multiply by -1 to make them negative)
     for (const tx of transactions) {

@@ -15,6 +15,7 @@ interface GoalDetailsModalProps {
     target_amount: number
     target_date: string
     current_amount: number
+    mappedStocks?: { stock_code: string; quantity: number; exchange: string; source_id: string }[]
   }
   onClose: () => void
 }
@@ -43,10 +44,41 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     error?: string
     current_value: number
   } | null>(null)
+  const [stockRows, setStockRows] = useState<any[]>([])
+  const [stockPrices, setStockPrices] = useState<Record<string, { inr: number; usd?: number }>>({})
 
   useEffect(() => {
     loadSchemeDetails()
   }, [goal.id])
+
+  useEffect(() => {
+    // Fetch mapped stocks from goal prop if available
+    if (goal.mappedStocks && Array.isArray(goal.mappedStocks)) {
+      setStockRows(goal.mappedStocks)
+    }
+  }, [goal])
+
+  useEffect(() => {
+    async function fetchPrices() {
+      const prices: Record<string, { inr: number; usd?: number }> = {}
+      for (const stock of stockRows) {
+        try {
+          const res = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.success && data.price) {
+              prices[stock.stock_code] = {
+                inr: data.price,
+                usd: data.originalCurrency === 'USD' ? data.originalPrice : undefined
+              }
+            }
+          }
+        } catch {}
+      }
+      setStockPrices(prices)
+    }
+    if (stockRows.length > 0) fetchPrices()
+  }, [JSON.stringify(stockRows)])
 
   const loadSchemeDetails = async () => {
     try {
@@ -64,10 +96,15 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       // Get goal mappings
       const mappings = await getGoalMappings(goal.id)
       
-      // Get detailed information for each mapped scheme
+      // Get detailed information for each mapped scheme (only mutual funds)
       const details: SchemeDetails[] = []
       
       for (const mapping of mappings) {
+        // Skip stocks - they will be handled separately
+        if (mapping.source_type === 'stock') {
+          continue
+        }
+        
         // Get current portfolio data for this scheme
         const { data: portfolioData } = await supabase
           .from('current_portfolio')
@@ -327,6 +364,40 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
                       <td className="px-6 py-4 text-sm text-gray-900 text-right">{scheme.allocation_percentage}%</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {stockRows.length > 0 && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-green-700 mb-2">Stocks</h3>
+            <div className="overflow-x-auto rounded-lg border border-green-200 bg-green-50">
+              <table className="min-w-full divide-y divide-green-200">
+                <thead className="bg-green-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase tracking-wider">Stock</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase tracking-wider">Quantity</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase tracking-wider">Quote (INR)</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase tracking-wider">Quote (USD)</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-green-700 uppercase tracking-wider">Current Value</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-green-100">
+                  {stockRows.map(stock => {
+                    const price = stockPrices[stock.stock_code]
+                    const value = price ? stock.quantity * price.inr : 0
+                    return (
+                      <tr key={stock.stock_code}>
+                        <td className="px-4 py-2 text-sm text-green-900">{stock.stock_code} <span className="ml-2 text-xs text-green-600">({stock.exchange})</span></td>
+                        <td className="px-4 py-2 text-sm text-green-900">{stock.quantity}</td>
+                        <td className="px-4 py-2 text-sm text-green-900">{price ? formatCurrency(price.inr) : '...'}</td>
+                        <td className="px-4 py-2 text-sm text-green-900">{price && price.usd ? `$${price.usd.toFixed(2)}` : (stock.exchange === 'US' ? '...' : '-')}</td>
+                        <td className="px-4 py-2 text-sm text-green-900">{price ? formatCurrency(value) : '...'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

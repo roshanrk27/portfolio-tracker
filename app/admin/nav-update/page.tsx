@@ -1,12 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { updateNavData } from '@/lib/updateNavData'
+import { supabase } from '@/lib/supabaseClient'
 
 export default function NavUpdatePage() {
   const [isUpdating, setIsUpdating] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Get current user ID
+    const getCurrentUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setUserId(session.user.id)
+      }
+    }
+    getCurrentUser()
+  }, [])
 
   const handleUpdateNav = async () => {
     setIsUpdating(true)
@@ -14,7 +27,7 @@ export default function NavUpdatePage() {
     setResult(null)
 
     try {
-      const response = await updateNavData()
+      const response = await updateNavData(userId || undefined)
       
       if (response.success) {
         setResult(response)
@@ -59,8 +72,13 @@ export default function NavUpdatePage() {
             <div className="mt-6 p-4 bg-green-50 border-l-4 border-green-500 text-green-800 rounded-r-lg">
               <div className="font-semibold text-green-900">Success!</div>
               <div className="mt-1">
-                Updated NAV data for <span className="font-bold">{result.count}</span> schemes on <span className="font-bold">{result.date}</span>
+                {result.message}
               </div>
+              {result.portfolioError && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
+                  <strong>Note:</strong> NAV data was updated successfully, but portfolio refresh encountered an issue: {result.portfolioError}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -71,9 +89,11 @@ export default function NavUpdatePage() {
           </h2>
           <ul className="list-disc list-inside space-y-3 text-gray-700 text-lg">
             <li className="font-medium">Fetches latest NAV data from AMFI India</li>
-            <li className="font-medium">Updates are stored with today's date</li>
-            <li className="font-medium">Duplicate entries for the same date are prevented</li>
-            <li className="font-medium">Data can be used for portfolio valuation and XIRR calculations</li>
+            <li className="font-medium">Updates existing NAV records with latest values</li>
+            <li className="font-medium">Uses actual NAV date from AMFI (not today's date)</li>
+            <li className="font-medium">No duplicate entries - each scheme has only one current NAV record</li>
+            <li className="font-medium">Automatically refreshes portfolio values with updated NAV data</li>
+            <li className="font-medium">Updated values are immediately available in Dashboard and Mutual Funds page</li>
           </ul>
         </div>
       </div>

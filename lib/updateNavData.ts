@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
+import { refreshPortfolioNav } from './portfolioUtils'
 
 // Create server-side Supabase client with service role key
 const supabaseServer = createClient(
@@ -8,7 +9,7 @@ const supabaseServer = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function updateNavData() {
+export async function updateNavData(userId?: string) {
   try {
     console.log('Starting NAV data update from AMFI...')
     
@@ -43,11 +44,11 @@ export async function updateNavData() {
       nav_date: entry.navDate
     }))
     
-    // Insert NAV data into database
+    // Insert NAV data into database - update existing rows instead of creating new ones
     const { data, error } = await supabaseServer
       .from('nav_data')
       .upsert(navDataToInsert, {
-        onConflict: 'scheme_code,nav_date',
+        onConflict: 'scheme_code',
         ignoreDuplicates: false
       })
     
@@ -58,10 +59,44 @@ export async function updateNavData() {
     
     console.log('Successfully updated NAV data for', navEntries.length, 'schemes')
     
-    return {
-      success: true,
-      count: navEntries.length,
-      date: today
+    // Now refresh portfolio values with the updated NAV data
+    // Note: Portfolio refresh requires a specific user ID, so we'll skip it if not provided
+    if (userId) {
+      console.log('Starting portfolio value refresh for user:', userId)
+      const refreshResult = await refreshPortfolioNav(userId)
+      
+      if (refreshResult.success) {
+        console.log('Successfully refreshed portfolio values for', refreshResult.updated, 'entries')
+        return {
+          success: true,
+          count: navEntries.length,
+          date: today,
+          message: `Updated NAV data for ${navEntries.length} schemes and refreshed portfolio values for ${refreshResult.updated} entries`,
+          navUpdated: navEntries.length,
+          portfolioRefreshed: refreshResult.updated
+        }
+      } else {
+        console.error('Portfolio refresh failed:', refreshResult.error)
+        return {
+          success: true,
+          count: navEntries.length,
+          date: today,
+          message: `Updated NAV data for ${navEntries.length} schemes, but portfolio refresh failed: ${refreshResult.error}`,
+          navUpdated: navEntries.length,
+          portfolioRefreshed: 0,
+          portfolioError: refreshResult.error
+        }
+      }
+    } else {
+      console.log('No user ID provided, skipping portfolio refresh')
+      return {
+        success: true,
+        count: navEntries.length,
+        date: today,
+        message: `Updated NAV data for ${navEntries.length} schemes (portfolio refresh skipped - no user ID provided)`,
+        navUpdated: navEntries.length,
+        portfolioRefreshed: 0
+      }
     }
     
   } catch (error: any) {

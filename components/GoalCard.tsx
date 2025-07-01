@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import GoalSchemeMapping from './GoalSchemeMapping'
+import { useState, useEffect } from 'react'
+import GoalMappingModal from './GoalMappingModal'
 import GoalEditModal from './GoalEditModal'
 import GoalDetailsModal from './GoalDetailsModal'
 
@@ -19,6 +19,10 @@ interface Goal {
   formattedXIRR?: string
   xirrConverged?: boolean
   xirrError?: string
+  mutual_fund_value?: number
+  stock_value?: number
+  nps_value?: number
+  mappedStocks?: { stock_code: string; exchange: string; quantity: number; source_id: string }[]
 }
 
 interface GoalCardProps {
@@ -30,9 +34,10 @@ interface GoalCardProps {
 
 export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
-  const [showSchemeMapping, setShowSchemeMapping] = useState(false)
+  const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [liveStockValue, setLiveStockValue] = useState<number | null>(null)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -53,7 +58,9 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
 
   const calculateProgress = () => {
     if (goal.target_amount <= 0) return 0
-    return Math.min((goal.current_amount / goal.target_amount) * 100, 100)
+    // Calculate total current amount including live stock values
+    const totalCurrentAmount = goal.current_amount + (liveStockValue || 0)
+    return Math.min((totalCurrentAmount / goal.target_amount) * 100, 100)
   }
 
   const calculateDaysRemaining = () => {
@@ -83,6 +90,32 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
   const daysRemaining = calculateDaysRemaining()
   const progressColor = getProgressColor(progress)
   const statusColor = getStatusColor(daysRemaining)
+
+  useEffect(() => {
+    async function fetchStockValues() {
+      if (!goal.mappedStocks || goal.mappedStocks.length === 0) {
+        setLiveStockValue(0)
+        return
+      }
+      let total = 0
+      for (const stock of goal.mappedStocks) {
+        try {
+          const res = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.success && data.price) {
+              total += stock.quantity * data.price
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      setLiveStockValue(total)
+    }
+    fetchStockValues()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal.mappedStocks && JSON.stringify(goal.mappedStocks)])
 
   return (
     <>
@@ -123,12 +156,12 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
                   <button
                     onClick={e => {
                       e.stopPropagation()
-                      setShowSchemeMapping(true)
+                      setShowMappingModal(true)
                       setShowActions(false)
                     }}
                     className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
-                    Map Schemes
+                    Map Investments
                   </button>
                   {onEdit && (
                     <button
@@ -164,13 +197,21 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-gray-700">Progress</span>
-            <span className="text-sm font-semibold text-gray-900">{progress.toFixed(1)}%</span>
+            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
+              <span className="text-sm font-semibold text-gray-500">Fetching...</span>
+            ) : (
+              <span className="text-sm font-semibold text-gray-900">{calculateProgress().toFixed(1)}%</span>
+            )}
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
-            <div
-              className={`h-2 rounded-full transition-all duration-300 ${progressColor}`}
-              style={{ width: `${progress}%` }}
-            ></div>
+            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
+              <div className="h-2 rounded-full bg-blue-200 animate-pulse" style={{ width: '100%' }}></div>
+            ) : (
+              <div
+                className={`h-2 rounded-full transition-all duration-300 ${progressColor}`}
+                style={{ width: `${calculateProgress()}%` }}
+              ></div>
+            )}
           </div>
         </div>
 
@@ -178,7 +219,11 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <p className="text-sm text-gray-600">Current Amount</p>
-            <p className="text-lg font-semibold text-gray-900">{formatCurrency(goal.current_amount)}</p>
+            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
+              <div className="flex items-center h-7"><span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></span> <span className="text-gray-500 text-sm">Fetching...</span></div>
+            ) : (
+              <p className="text-lg font-semibold text-gray-900">{formatCurrency(goal.current_amount + (liveStockValue || 0))}</p>
+            )}
           </div>
           <div>
             <p className="text-sm text-gray-600">Target Amount</p>
@@ -186,18 +231,45 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
           </div>
         </div>
 
-        {/* XIRR Display */}
-        {goal.formattedXIRR && (
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-            <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-gray-700">Goal XIRR</span>
-              <span className={`text-sm font-semibold ${goal.xirrPercentage && goal.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {goal.formattedXIRR}
-              </span>
+        {/* Investment Breakdown */}
+        {(goal.mutual_fund_value || goal.nps_value || (liveStockValue !== null ? formatCurrency(liveStockValue) : '...')) && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">Investment Breakdown</h4>
+            <div className="space-y-2">
+              {goal.mutual_fund_value && goal.mutual_fund_value > 0 && (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Mutual Funds</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-medium text-gray-900">{formatCurrency(goal.mutual_fund_value)}</span>
+                    {/* MF XIRR below current value */}
+                    <span className={`text-xs mt-1 ${goal.xirrPercentage === undefined ? 'text-gray-400' : goal.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {goal.formattedXIRR ? `XIRR: ${goal.formattedXIRR}` : 'XIRR: N/A'}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {goal.nps_value && goal.nps_value > 0 && (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">NPS</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{formatCurrency(goal.nps_value)}</span>
+                </div>
+              )}
+              {liveStockValue !== null && (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Stocks</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{formatCurrency(liveStockValue)}</span>
+                </div>
+              )}
             </div>
-            {goal.xirrError && (
-              <p className="text-xs text-red-600 mt-1">{goal.xirrError}</p>
-            )}
           </div>
         )}
 
@@ -224,8 +296,8 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex justify-between items-center">
             <span className="text-sm text-gray-600">Remaining</span>
-            <span className={`text-sm font-semibold ${goal.target_amount - goal.current_amount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {formatCurrency(goal.target_amount - goal.current_amount)}
+            <span className={`text-sm font-semibold ${goal.target_amount - (goal.current_amount + (liveStockValue || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+              {formatCurrency(goal.target_amount - (goal.current_amount + (liveStockValue || 0)))}
             </span>
           </div>
         </div>
@@ -233,10 +305,10 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         {/* Map Schemes Button */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <button
-            onClick={() => setShowSchemeMapping(true)}
+            onClick={() => setShowMappingModal(true)}
             className="w-full bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors"
           >
-            Map Mutual Fund Schemes
+            Map Investments
           </button>
         </div>
       </div>
@@ -246,12 +318,11 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
       )}
 
       {/* Scheme Mapping Modal */}
-      {showSchemeMapping && (
-        <GoalSchemeMapping
-          goalId={goal.id}
-          goalName={goal.name}
-          onClose={() => setShowSchemeMapping(false)}
-          onMappingChanged={onMappingChanged}
+      {showMappingModal && (
+        <GoalMappingModal
+          goal={goal}
+          onClose={() => setShowMappingModal(false)}
+          onMappingUpdated={onMappingChanged || (() => {})}
         />
       )}
 

@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getCurrentPortfolio, getPortfolioSummary } from '@/lib/portfolioUtils'
+import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, isNavUpToDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
+import RefreshNavButton from '@/components/RefreshNavButton'
 
 interface PortfolioHolding {
   id: string
@@ -34,6 +35,11 @@ export default function PortfolioDashboard() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
+  const [isNavUpToDateState, setIsNavUpToDateState] = useState(false)
+  const [schemeXirrMap, setSchemeXirrMap] = useState<Record<string, string>>({})
+  const [xirrLoading, setXirrLoading] = useState(true)
+  const [mfXirr, setMfXirr] = useState<{ formattedXIRR: string; xirr: number; converged: boolean } | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -43,21 +49,36 @@ export default function PortfolioDashboard() {
         router.push('/auth/login')
       } else {
         setLoading(false)
-        // Load portfolio data
         try {
-          const [portfolioData, summaryData] = await Promise.all([
+          const [portfolioData, summaryData, latestNavDateData, navUpToDate, schemeXirrArr, mfXirrData] = await Promise.all([
             getCurrentPortfolio(session.user.id),
-            getPortfolioSummary(session.user.id)
+            getPortfolioSummary(session.user.id),
+            getLatestNavDate(),
+            isNavUpToDate(),
+            getSchemeXIRRs(session.user.id),
+            getPortfolioXIRR(session.user.id)
           ])
-          
           setPortfolio(portfolioData)
           setSummary(summaryData)
+          setLatestNavDate(latestNavDateData)
+          setIsNavUpToDateState(navUpToDate)
+          // Map XIRR results for quick lookup
+          const xirrMap: Record<string, string> = {}
+          for (const x of schemeXirrArr) {
+            xirrMap[`${x.scheme_name}__${x.folio}`] = x.formattedXIRR
+          }
+          setSchemeXirrMap(xirrMap)
+          setXirrLoading(false)
+          setMfXirr(mfXirrData ? {
+            formattedXIRR: mfXirrData.formattedXIRR,
+            xirr: mfXirrData.xirr,
+            converged: mfXirrData.converged
+          } : null)
         } catch (err: any) {
           setError(err.message)
         }
       }
     }
-
     checkAuth()
   }, [router])
 
@@ -76,6 +97,42 @@ export default function PortfolioDashboard() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-IN')
+  }
+
+  const handleNavRefresh = async () => {
+    // Refresh portfolio data after NAV update
+    const { data: { session } } = await supabase.auth.getSession()
+    if (session) {
+      try {
+        const [portfolioData, summaryData, latestNavDateData, navUpToDate, schemeXirrArr, mfXirrData] = await Promise.all([
+          getCurrentPortfolio(session.user.id),
+          getPortfolioSummary(session.user.id),
+          getLatestNavDate(),
+          isNavUpToDate(),
+          getSchemeXIRRs(session.user.id),
+          getPortfolioXIRR(session.user.id)
+        ])
+        
+        setPortfolio(portfolioData)
+        setSummary(summaryData)
+        setLatestNavDate(latestNavDateData)
+        setIsNavUpToDateState(navUpToDate)
+        // Map XIRR results for quick lookup
+        const xirrMap: Record<string, string> = {}
+        for (const x of schemeXirrArr) {
+          xirrMap[`${x.scheme_name}__${x.folio}`] = x.formattedXIRR
+        }
+        setSchemeXirrMap(xirrMap)
+        setXirrLoading(false)
+        setMfXirr(mfXirrData ? {
+          formattedXIRR: mfXirrData.formattedXIRR,
+          xirr: mfXirrData.xirr,
+          converged: mfXirrData.converged
+        } : null)
+      } catch (err: any) {
+        setError(err.message)
+      }
+    }
   }
 
   if (loading) {
@@ -111,8 +168,31 @@ export default function PortfolioDashboard() {
       <div className="container mx-auto p-6">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Portfolio Dashboard</h1>
-          <p className="text-gray-600">Your current mutual fund holdings and performance</p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Mutual Funds</h1>
+              <p className="text-gray-600">Your current mutual fund holdings and performance</p>
+              {latestNavDate && (
+                <p className="text-sm text-gray-500 mt-1">
+                  Last NAV update: {new Date(latestNavDate).toLocaleDateString('en-IN')}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <RefreshNavButton 
+                onRefresh={handleNavRefresh}
+              />
+              <button
+                onClick={() => router.push('/upload')}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Transactions
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Portfolio Summary Cards */}
@@ -131,7 +211,6 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
             </div>
-
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
@@ -145,7 +224,7 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
             </div>
-
+            {/* MF XIRR Card */}
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-purple-500">
               <div className="flex items-center">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -154,10 +233,13 @@ export default function PortfolioDashboard() {
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Return</p>
-                  <p className={`text-2xl font-bold ${summary.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(summary.totalReturn)}
+                  <p className="text-sm font-medium text-gray-600">MF XIRR</p>
+                  <p className={`text-2xl font-bold ${mfXirr ? (mfXirr.xirr >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-500'}`}>
+                    {xirrLoading || !mfXirr ? 'Loading...' : mfXirr.formattedXIRR}
                   </p>
+                  {!xirrLoading && mfXirr && !mfXirr.converged && (
+                    <span className="text-xs text-orange-500">⚠ Not converged</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -193,7 +275,7 @@ export default function PortfolioDashboard() {
                     Current Value
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Return
+                    XIRR
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Last Update
@@ -201,48 +283,55 @@ export default function PortfolioDashboard() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {portfolio.map((holding) => (
-                  <tr key={holding.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
-                        {holding.isin && (
-                          <div className="text-sm text-gray-500">{holding.isin}</div>
-                        )}
+                {(loading || xirrLoading) ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-gray-400">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+                        Loading holdings...
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {holding.folio}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {holding.latest_unit_balance.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{holding.current_nav.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatCurrency(holding.current_value)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className={`font-medium ${holding.return_amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatCurrency(holding.return_amount)}
-                        </div>
-                        <div className={`text-xs ${holding.return_percentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {formatPercentage(holding.return_percentage)}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(holding.latest_date)}
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  portfolio.map((holding) => {
+                    const xirrKey = `${holding.scheme_name}__${holding.folio}`
+                    return (
+                      <tr key={holding.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
+                            {holding.isin && (
+                              <div className="text-sm text-gray-500">{holding.isin}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {holding.folio}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {holding.latest_unit_balance.toLocaleString('en-IN', { maximumFractionDigits: 4 })}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          ₹{holding.current_nav.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {formatCurrency(holding.current_value)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {xirrLoading ? <span className="text-gray-400">Loading...</span> : (schemeXirrMap[xirrKey] || <span className="text-gray-400">N/A</span>)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {formatDate(holding.latest_date)}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
-          {portfolio.length === 0 && (
+          {portfolio.length === 0 && !loading && !xirrLoading && (
             <div className="text-center py-12">
               <div className="text-gray-400 mb-4">
                 <svg className="mx-auto h-12 w-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">

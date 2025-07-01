@@ -100,6 +100,78 @@ export const fileUploadSchema = z.object({
 
 export type FileUploadData = z.infer<typeof fileUploadSchema>
 
+// Stock form validation schema
+export const stockFormSchema = z.object({
+  stockCode: z
+    .string()
+    .min(1, 'Stock code is required')
+    .max(20, 'Stock code must be less than 20 characters')
+    .trim()
+    .toUpperCase(),
+  quantity: z
+    .string()
+    .min(1, 'Quantity is required')
+    .transform((val, ctx) => {
+      const num = parseFloat(val)
+      if (isNaN(num)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantity must be a valid number'
+        })
+        return z.NEVER
+      }
+      if (num <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantity must be greater than 0'
+        })
+        return z.NEVER
+      }
+      if (num > 1000000) { // 1 million shares limit
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantity must be less than 1,000,000'
+        })
+        return z.NEVER
+      }
+      // Check for more than 3 decimal places
+      const decimalPlaces = val.includes('.') ? val.split('.')[1].length : 0
+      if (decimalPlaces > 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Quantity can have maximum 3 decimal places'
+        })
+        return z.NEVER
+      }
+      return num
+    }),
+  purchaseDate: z
+    .string()
+    .min(1, 'Purchase date is required')
+    .transform((val, ctx) => {
+      const date = new Date(val)
+      if (isNaN(date.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid date format'
+        })
+        return z.NEVER
+      }
+      const today = new Date()
+      today.setHours(23, 59, 59, 999)
+      if (date > today) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Purchase date cannot be in the future'
+        })
+        return z.NEVER
+      }
+      return val
+    })
+})
+
+export type StockFormData = z.infer<typeof stockFormSchema>
+
 // Helper function to format validation errors
 export const formatValidationErrors = (errors: z.ZodError) => {
   return errors.errors.map(error => error.message).join(', ')

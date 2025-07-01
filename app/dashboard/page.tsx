@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getPortfolioSummary, getGoalsWithProgress, getPortfolioXIRR, getGoalsWithProgressAndXIRR } from '@/lib/portfolioUtils'
+import { getPortfolioSummary, getGoals, getGoalXIRR, getGoalMappings, getLatestNavDate, isNavUpToDate, getPortfolioXIRR } from '@/lib/portfolioUtils'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
+import RefreshNavButton from '@/components/RefreshNavButton'
 
 interface PortfolioSummary {
   totalHoldings: number
@@ -15,6 +16,14 @@ interface PortfolioSummary {
   totalReturnPercentage: number
   totalNavValue: number
   entriesWithNav: number
+}
+
+interface StockSummary {
+  totalStocks: number
+  totalStockValue: number
+  totalInvested: number
+  totalReturn: number
+  totalReturnPercentage: number
 }
 
 interface Goal {
@@ -31,17 +40,24 @@ interface Goal {
   formattedXIRR?: string
   xirrConverged?: boolean
   xirrError?: string
+  mutual_fund_value?: number
+  mappedStocks?: { stock_code: string; quantity: number; exchange: string; source_id: string }[]
+  nps_value?: number
 }
 
 export default function Dashboard() {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
+  const [stockSummary, setStockSummary] = useState<StockSummary | null>(null)
   const [goals, setGoals] = useState<Goal[]>([])
   const [portfolioXIRR, setPortfolioXIRR] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
-  const [goalsLoading, setGoalsLoading] = useState(false)
+  const [stockLoading, setStockLoading] = useState(false)
+  const [goalsLoading, setGoalsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showGoalForm, setShowGoalForm] = useState(false)
+  const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
+  const [isNavUpToDateState, setIsNavUpToDateState] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -51,16 +67,76 @@ export default function Dashboard() {
         router.push('/auth/login')
       } else {
         setLoading(false)
-        loadDashboardData(session.user.id)
+        try {
+          const [summaryData, goalsData] = await Promise.all([
+            getPortfolioSummary(session.user.id),
+            getGoals(session.user.id)
+          ])
+          
+          // Load stock summary data
+          const stockData = await loadStockSummary(session.user.id)
+          setStockSummary(stockData)
+          
+          // For each goal, fetch XIRR and mutual fund value
+          const goalsWithDetails = await Promise.all(goalsData.map(async (goal) => {
+            const xirrData = await getGoalXIRR(goal.id)
+            const mappings = await getGoalMappings(goal.id)
+            let mutualFundValue = 0
+            let mappedStocks = []
+            let npsValue = 0
+            for (const mapping of mappings) {
+              if (mapping.source_type === 'mutual_fund') {
+                const { data: portfolioData } = await supabase
+                  .from('current_portfolio')
+                  .select('current_value')
+                  .eq('user_id', session.user.id)
+                  .eq('scheme_name', mapping.scheme_name)
+                  .eq('folio', mapping.folio || '')
+                mutualFundValue += (portfolioData || []).reduce((sum: number, item: { current_value: string }) => sum + (parseFloat(item.current_value || '0') || 0), 0)
+              } else if (mapping.source_type === 'stock' && mapping.source_id) {
+                const { data: stockData } = await supabase
+                  .from('stocks')
+                  .select('*')
+                  .eq('id', mapping.source_id)
+                  .eq('user_id', session.user.id)
+                  .single()
+                if (stockData) {
+                  mappedStocks.push({
+                    stock_code: stockData.stock_code,
+                    quantity: stockData.quantity,
+                    exchange: stockData.exchange,
+                    source_id: stockData.id
+                  })
+                }
+              } else if (mapping.source_type === 'nps') {
+                // NPS value calculation can be added here
+                npsValue += 0
+              }
+            }
+            return {
+              ...goal,
+              ...xirrData,
+              mutual_fund_value: mutualFundValue,
+              mappedStocks,
+              nps_value: npsValue,
+              current_amount: mutualFundValue + npsValue // stock value will be added client-side
+            }
+          }))
+          setPortfolioSummary(summaryData)
+          setGoals(goalsWithDetails)
+          setGoalsLoading(false)
+        } catch (err: any) {
+          setError(err.message)
+        }
       }
     }
-
     checkAuth()
   }, [router])
 
   const loadDashboardData = async (userId: string) => {
     try {
       setPortfolioLoading(true)
+      setStockLoading(true)
       setGoalsLoading(true)
       
       // Load portfolio data first (faster)
@@ -73,14 +149,98 @@ export default function Dashboard() {
       setPortfolioXIRR(xirrData)
       setPortfolioLoading(false)
       
+      // Load stock data
+      const stockData = await loadStockSummary(userId)
+      setStockSummary(stockData)
+      setStockLoading(false)
+      
       // Load goals data (slower due to XIRR calculations)
-      const goalsData = await getGoalsWithProgressAndXIRR(userId)
+      const goalsData = await getGoals(userId)
       setGoals(goalsData)
       setGoalsLoading(false)
+
+      // Load latest NAV date
+      const latestNavDateData = await getLatestNavDate()
+      setLatestNavDate(latestNavDateData)
+
+      // Check if NAV is up to date
+      const navUpToDate = await isNavUpToDate()
+      setIsNavUpToDateState(navUpToDate)
     } catch (err: any) {
       setError(err.message)
       setPortfolioLoading(false)
+      setStockLoading(false)
       setGoalsLoading(false)
+    }
+  }
+
+  const loadStockSummary = async (userId: string): Promise<StockSummary> => {
+    try {
+      // Get all stocks for the user
+      const { data: stocks, error } = await supabase
+        .from('stocks')
+        .select('*')
+        .eq('user_id', userId)
+
+      if (error) {
+        console.error('Error loading stocks:', error)
+        return {
+          totalStocks: 0,
+          totalStockValue: 0,
+          totalInvested: 0,
+          totalReturn: 0,
+          totalReturnPercentage: 0
+        }
+      }
+
+      if (!stocks || stocks.length === 0) {
+        return {
+          totalStocks: 0,
+          totalStockValue: 0,
+          totalInvested: 0,
+          totalReturn: 0,
+          totalReturnPercentage: 0
+        }
+      }
+
+      let totalStockValue = 0
+      let totalInvested = 0
+
+      // Fetch current prices for all stocks
+      for (const stock of stocks) {
+        try {
+          const response = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
+          if (response.ok) {
+            const priceData = await response.json()
+            if (priceData.success && priceData.price) {
+              const currentValue = stock.quantity * priceData.price
+              totalStockValue += currentValue
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching price for ${stock.stock_code}:`, err)
+        }
+      }
+
+      const totalReturn = totalStockValue - totalInvested
+      const totalReturnPercentage = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0
+
+      return {
+        totalStocks: stocks.length,
+        totalStockValue,
+        totalInvested,
+        totalReturn,
+        totalReturnPercentage
+      }
+    } catch (err) {
+      console.error('Error in loadStockSummary:', err)
+      return {
+        totalStocks: 0,
+        totalStockValue: 0,
+        totalInvested: 0,
+        totalReturn: 0,
+        totalReturnPercentage: 0
+      }
     }
   }
 
@@ -89,7 +249,7 @@ export default function Dashboard() {
     setGoalsLoading(true)
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
-      const goalsData = await getGoalsWithProgressAndXIRR(session.user.id)
+      const goalsData = await getGoals(session.user.id)
       setGoals(goalsData)
       setGoalsLoading(false)
     }
@@ -112,7 +272,7 @@ export default function Dashboard() {
       // Refresh goals list
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
-        const goalsData = await getGoalsWithProgressAndXIRR(session.user.id)
+        const goalsData = await getGoals(session.user.id)
         setGoals(goalsData)
         setGoalsLoading(false)
       }
@@ -127,7 +287,7 @@ export default function Dashboard() {
       setGoalsLoading(true)
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
-        const goalsData = await getGoalsWithProgressAndXIRR(session.user.id)
+        const goalsData = await getGoals(session.user.id)
         setGoals(goalsData)
         setGoalsLoading(false)
       }
@@ -138,25 +298,51 @@ export default function Dashboard() {
   }
 
   const handleGoalEdit = async (updatedGoal: Goal) => {
-    setGoalsLoading(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session) {
+    try {
+      setGoalsLoading(true)
       const { error } = await supabase
         .from('goals')
         .update({
+          name: updatedGoal.name,
+          description: updatedGoal.description,
           target_amount: updatedGoal.target_amount,
           target_date: updatedGoal.target_date
         })
         .eq('id', updatedGoal.id)
-        .eq('user_id', session.user.id)
+
       if (error) {
-        setError(error.message)
+        console.error('Error updating goal:', error)
         setGoalsLoading(false)
         return
       }
-      const goalsData = await getGoalsWithProgressAndXIRR(session.user.id)
-      setGoals(goalsData)
+
+      // Refresh goals list
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        const goalsData = await getGoals(session.user.id)
+        setGoals(goalsData)
+        setGoalsLoading(false)
+      }
+    } catch (err: any) {
+      console.error('Error in handleGoalEdit:', err)
       setGoalsLoading(false)
+    }
+  }
+
+  const handleNavRefresh = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        // Refresh portfolio and stock data
+        const [summaryData, stockData] = await Promise.all([
+          getPortfolioSummary(session.user.id),
+          loadStockSummary(session.user.id)
+        ])
+        setPortfolioSummary(summaryData)
+        setStockSummary(stockData)
+      }
+    } catch (err: any) {
+      console.error('Error refreshing data:', err)
     }
   }
 
@@ -237,23 +423,45 @@ export default function Dashboard() {
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Holdings</p>
+                  <p className="text-sm font-medium text-gray-600">MF Holdings</p>
                   <p className="text-2xl font-bold text-gray-900">{portfolioSummary.totalHoldings}</p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500 relative">
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Current Value</p>
+                <div className="ml-4 flex-1">
+                  <p className="text-sm font-medium text-gray-600">MF Value</p>
                   <p className="text-2xl font-bold text-gray-900">{formatCurrency(portfolioSummary.totalCurrentValue)}</p>
+                  {latestNavDate && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Last updated: {new Date(latestNavDate).toLocaleDateString('en-IN')}
+                    </p>
+                  )}
                 </div>
+              </div>
+              <div className="absolute top-2 right-2">
+                <button
+                  onClick={isNavUpToDateState ? undefined : handleNavRefresh}
+                  disabled={isNavUpToDateState}
+                  className={`p-2 rounded-full border border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
+                    isNavUpToDateState
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                      : 'bg-green-100 text-green-600 hover:bg-green-200 hover:text-green-700'
+                  }`}
+                  title={isNavUpToDateState ? 'NAV is up to date' : 'Refresh NAV'}
+                  aria-label="Refresh NAV"
+                >
+                  <svg className={`w-5 h-5 ${!isNavUpToDateState ? 'hover:animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -265,25 +473,9 @@ export default function Dashboard() {
                   </svg>
                 </div>
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Return</p>
-                  <p className={`text-2xl font-bold ${portfolioSummary.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(portfolioSummary.totalReturn)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-indigo-500">
-              <div className="flex items-center">
-                <div className="p-2 bg-indigo-100 rounded-lg">
-                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Portfolio XIRR</p>
-                  <p className={`text-2xl font-bold ${portfolioXIRR?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {portfolioXIRR?.formattedXIRR || 'Calculating...'}
+                  <p className="text-sm font-medium text-gray-600">Stock Value</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {stockLoading ? 'Loading...' : formatCurrency(stockSummary?.totalStockValue || 0)}
                   </p>
                 </div>
               </div>
@@ -310,62 +502,11 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-                  {/* Header skeleton */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1">
-                      <div className="h-6 bg-gray-200 rounded w-3/4 mb-2 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-1/2 animate-pulse"></div>
-                    </div>
-                    <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
-                  </div>
-                  
-                  {/* Progress bar skeleton */}
-                  <div className="mb-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div className="h-2 bg-gray-300 rounded-full w-1/3 animate-pulse"></div>
-                    </div>
-                  </div>
-                  
-                  {/* Financial summary skeleton */}
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <div className="h-4 bg-gray-200 rounded w-20 mb-2 animate-pulse"></div>
-                      <div className="h-6 bg-gray-200 rounded w-16 animate-pulse"></div>
-                    </div>
-                    <div>
-                      <div className="h-4 bg-gray-200 rounded w-20 mb-2 animate-pulse"></div>
-                      <div className="h-6 bg-gray-200 rounded w-16 animate-pulse"></div>
-                    </div>
-                  </div>
-                  
-                  {/* XIRR skeleton */}
-                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex justify-between items-center">
-                      <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-12 animate-pulse"></div>
-                    </div>
-                  </div>
-                  
-                  {/* Date and status skeleton */}
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <div className="h-4 bg-gray-200 rounded w-16 mb-1 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-20 animate-pulse"></div>
-                    </div>
-                    <div className="text-right">
-                      <div className="h-4 bg-gray-200 rounded w-20 mb-1 animate-pulse"></div>
-                      <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
-                    </div>
-                  </div>
-                  
-                  {/* Button skeleton */}
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
-                  </div>
+                  {/* Skeleton content */}
+                  <div className="h-6 bg-gray-200 rounded w-3/4 mb-2 animate-pulse"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+                  <div className="h-4 bg-gray-200 rounded w-16 animate-pulse"></div>
+                  <div className="h-6 bg-gray-200 rounded w-16 animate-pulse"></div>
                 </div>
               ))}
             </div>
@@ -387,15 +528,19 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {goals.map((goal) => (
-                <GoalCard
-                  key={goal.id}
-                  goal={goal}
-                  onEdit={handleGoalEdit}
-                  onDelete={handleGoalDeleted}
-                  onMappingChanged={handleMappingChanged}
-                />
-              ))}
+              {goals.map((goal) => {
+                // Debug log for XIRR fields
+                console.log('Goal XIRR debug:', goal.name, goal.formattedXIRR, goal.xirrPercentage, goal.xirr, goal.xirrConverged, goal.xirrError)
+                return (
+                  <GoalCard
+                    key={goal.id}
+                    goal={goal}
+                    onEdit={handleGoalEdit}
+                    onDelete={handleGoalDeleted}
+                    onMappingChanged={handleMappingChanged}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
