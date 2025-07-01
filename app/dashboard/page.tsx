@@ -58,6 +58,8 @@ export default function Dashboard() {
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
   const [isNavUpToDateState, setIsNavUpToDateState] = useState(false)
+  const [npsValue, setNpsValue] = useState<number | null>(null)
+  const [npsLoading, setNpsLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
@@ -131,6 +133,41 @@ export default function Dashboard() {
       }
     }
     checkAuth()
+
+    // Fetch NPS value
+    const fetchNpsValue = async () => {
+      setNpsLoading(true)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) return
+        // Fetch holdings
+        const { data: holdings, error: holdingsError } = await supabase
+          .from('nps_holdings')
+          .select('id, fund_code, units')
+          .eq('user_id', session.user.id)
+        if (holdingsError) throw holdingsError
+        // Fetch NAVs
+        const { data: navs, error: navsError } = await supabase
+          .from('nps_nav')
+          .select('fund_code, nav')
+        if (navsError) throw navsError
+        const navMap: Record<string, number> = {}
+        for (const row of navs || []) {
+          navMap[row.fund_code] = parseFloat(row.nav)
+        }
+        let total = 0
+        for (const h of holdings || []) {
+          const nav = navMap[h.fund_code] || 0
+          total += nav * (parseFloat(h.units) || 0)
+        }
+        setNpsValue(total)
+      } catch {
+        setNpsValue(null)
+      } finally {
+        setNpsLoading(false)
+      }
+    }
+    fetchNpsValue()
   }, [router])
 
   const loadDashboardData = async (userId: string) => {
@@ -351,7 +388,7 @@ export default function Dashboard() {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0
+      maximumFractionDigits: 2
     }).format(amount)
   }
 
@@ -476,6 +513,23 @@ export default function Dashboard() {
                   <p className="text-sm font-medium text-gray-600">Stock Value</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {stockLoading ? 'Loading...' : formatCurrency(stockSummary?.totalStockValue || 0)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* NPS Card */}
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 flex-1 min-w-[250px] cursor-pointer hover:shadow-lg transition" onClick={() => router.push('/dashboard/nps')}>
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
+                <div className="ml-4 flex-1">
+                  <p className="text-sm font-medium text-gray-600">NPS Value</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {npsLoading ? '...' : (npsValue !== null ? formatCurrency(npsValue) : '-')}
                   </p>
                 </div>
               </div>

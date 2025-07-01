@@ -18,11 +18,11 @@ Multiply latest stock price by quantity for each stock entry
 ### 6. Store or cache latest stock prices
 Optional: use a 'stock_prices' table or cache in memory per session
 
-### 7. Add file upload form for NPS holding statement
-Add to dashboard tab with input for file upload
+### 7. Add file upload form creating table with NPS fund name to code mapping in admin dashboard
+Add to admin dashboard tab with input csv for file upload. Upsert data with nps fund code as unique constraint
 
-### 8. Parse NPS statement and extract scheme NAVs and units
-Parse uploaded file and extract scheme-wise holdings
+### 8. In NPS page add NPS holdings by selecting from the fund list
+For each fund enter current unit holding and updated date
 
 ### 9. Fetch latest NAV for NPS schemes
 Scrape or query current NAV for central/state tier from official source
@@ -30,8 +30,8 @@ Scrape or query current NAV for central/state tier from official source
 ### 10. Compute NPS total current value
 Multiply units by NAV for each scheme and sum it up
 
-### 11. Add 'Other Investments' tab in dashboard
-Create tab or section for Stocks and NPS overview
+### 11. Add 'NPS' card in dashboard and show current value
+Create tab or section for NPS overview
 
 ### 12. Create card view for total stock value
 Sum and display current stock portfolio value
