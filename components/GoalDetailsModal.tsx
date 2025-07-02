@@ -464,7 +464,23 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
                 <tbody className="divide-y divide-gray-200">
                   {schemeDetails.map((scheme, index) => (
                     <tr key={scheme.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900">{scheme.scheme_name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {scheme.scheme_name} {' '}
+                        <span className="italic text-xs text-gray-500 font-normal">[
+                          {(() => {
+                            const name = (scheme.scheme_name || '').toLowerCase();
+                            let assetType = 'Equity';
+                            if (
+                              name.includes('debt') ||
+                              name.includes('liquid') ||
+                              name.includes('income') ||
+                              name.includes('gilt') ||
+                              name.includes('bond')
+                            ) assetType = 'Debt';
+                            return assetType;
+                          })()}
+                        ]</span>
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{scheme.folio || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatNumber(scheme.balance_units)}</td>
                       <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatNav(scheme.current_nav)}</td>
