@@ -6,6 +6,8 @@ import { getGoalMappings, getGoalXIRR } from '@/lib/portfolioUtils'
 import { calculateSchemeXIRR, formatXIRR } from '@/lib/xirr'
 import { calculateAssetAllocation } from '@/lib/assetAllocation'
 import AssetAllocationBar from './AssetAllocationBar'
+import { useQuery } from '@tanstack/react-query'
+import { fetchStockPrices } from '@/lib/stockUtils'
 
 interface GoalDetailsModalProps {
   goal: {
@@ -58,8 +60,21 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
   const [npsHoldings, setNpsHoldings] = useState<NpsHoldingDetail[]>([])
 
   useEffect(() => {
-    loadSchemeDetails()
-    loadNpsDetails()
+    const loadAllDetails = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        await Promise.all([
+          loadSchemeDetails(),
+          loadNpsDetails()
+        ])
+      } catch (err: any) {
+        setError(err.message || 'Error loading details')
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadAllDetails()
   }, [goal.id])
 
   useEffect(() => {
@@ -69,31 +84,39 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     }
   }, [goal])
 
+  // Prepare symbols and exchanges for the query
+  const symbols = stockRows.map(stock => stock.stock_code)
+  const exchanges = stockRows.map(stock => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
+
+  const { data: pricesData, isLoading: pricesLoading } = useQuery({
+    queryKey: ['stockPrices', symbols, exchanges],
+    queryFn: async () => {
+      if (symbols.length === 0) return {}
+      const res = await fetchStockPrices(symbols, exchanges)
+      return res?.prices || {}
+    },
+    enabled: symbols.length > 0,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Convert pricesData to the format expected by the rest of the component
   useEffect(() => {
-    async function fetchPrices() {
-      const prices: Record<string, { inr: number; usd?: number }> = {}
-      for (const stock of stockRows) {
-        try {
-          const res = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
-          if (res.ok) {
-            const data = await res.json()
-            if (data.success && data.price) {
-              prices[stock.stock_code] = {
-                inr: data.price,
-                usd: data.originalCurrency === 'USD' ? data.originalPrice : undefined
-              }
-            }
-          }
-        } catch {}
+    if (!pricesData) return
+    const formatted: Record<string, { inr: number; usd?: number }> = {}
+    for (const stock of stockRows) {
+      const priceObj = pricesData[stock.stock_code]
+      if (priceObj && priceObj.price) {
+        formatted[stock.stock_code] = {
+          inr: priceObj.price,
+          usd: priceObj.originalCurrency === 'USD' ? priceObj.originalPrice : undefined
+        }
       }
-      setStockPrices(prices)
     }
-    if (stockRows.length > 0) fetchPrices()
-  }, [JSON.stringify(stockRows)])
+    setStockPrices(formatted)
+  }, [pricesData, stockRows])
 
   const loadSchemeDetails = async () => {
     try {
-      setLoading(true)
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         setError('Not authenticated')
@@ -195,15 +218,11 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       setSchemeDetails(details)
     } catch (err: any) {
       setError(err.message || 'Error loading scheme details')
-    } finally {
-      setLoading(false)
     }
   }
 
   const loadNpsDetails = async () => {
     try {
-      setLoading(true)
-      setError('')
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       // Get goal mappings
@@ -249,8 +268,6 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       setNpsHoldings(details)
     } catch (err: any) {
       setError(err.message || 'Error loading NPS details')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -308,19 +325,6 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-4xl mx-4">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading scheme details...</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -359,77 +363,84 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
           </div>
           <div className="bg-green-50 border border-green-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
             <span className="text-sm font-semibold text-green-700 mb-1">Current Value</span>
-            <span className="text-lg font-bold text-green-900">{formatCurrency(calculateTrueCurrentValue())}</span>
+            <span className="text-lg font-bold text-green-900">{loading ? <div className="animate-pulse bg-green-200 h-6 w-24 rounded" /> : formatCurrency(calculateTrueCurrentValue())}</span>
           </div>
           <div className="bg-green-50 border border-green-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
             <span className="text-sm font-semibold text-green-700 mb-1">% Goal Achieved</span>
-            <span className="text-lg font-bold text-green-900">{percentGoalAchieved().toFixed(1)}%</span>
+            <span className="text-lg font-bold text-green-900">{loading ? <div className="animate-pulse bg-green-200 h-6 w-16 rounded" /> : percentGoalAchieved().toFixed(1) + '%'}</span>
           </div>
         </div>
 
         {/* Asset Allocation Bar - just below top cards */}
-        {(schemeDetails.length > 0 || stockRows.length > 0 || npsHoldings.length > 0) && (() => {
-          // Prepare allocation data for MF
-          const mfAlloc = schemeDetails.map(s => ({
-            type: s.scheme_name,
-            value: s.current_value,
-            category: (() => {
-              const name = (s.scheme_name || '').toLowerCase();
-              if (name.includes('debt') || name.includes('liquid') || name.includes('income') || name.includes('gilt') || name.includes('bond')) return 'Debt';
-              return 'Equity';
-            })()
-          }))
-          // Stocks: all Equity
-          const stockAlloc = stockRows.map(stock => {
-            const price = stockPrices[stock.stock_code]
-            const value = price ? stock.quantity * price.inr : 0
-            return {
-              type: stock.stock_code,
-              value,
-              category: 'Equity'
-            }
-          })
-          // NPS: categorize by scheme name
-          const npsAlloc = npsHoldings.map(nps => {
-            const name = (nps.fund_name || '').toLowerCase();
-            let category = 'Other';
-            if (name.includes('scheme e') || name.includes('scheme a')) category = 'Equity';
-            else if (name.includes('scheme g') || name.includes('scheme c')) category = 'Debt';
-            return {
-              type: nps.fund_name,
-              value: nps.current_value,
-              category
-            }
-          })
-          // Aggregate by category
-          const allAlloc = [...mfAlloc, ...stockAlloc, ...npsAlloc]
-          const allocationMap: Record<string, number> = {}
-          for (const item of allAlloc) {
-            if (!item.value || item.value <= 0) continue;
-            allocationMap[item.category] = (allocationMap[item.category] || 0) + item.value
-          }
-          const totalValue = Object.values(allocationMap).reduce((sum, v) => sum + v, 0);
-          // Subtle pastel color scheme
-          const colorMap: Record<string, string> = {
-            Equity: '#a5b4fc', // indigo-200
-            Debt: '#bbf7d0',   // green-200
-            Other: '#f3e8ff',  // purple-100
-          };
-          const allocationData = Object.entries(allocationMap).map(([category, value]) => ({
-            category,
-            value,
-            percentage: totalValue > 0 ? (value / totalValue) * 100 : 0,
-            color: colorMap[category] || '#64748b', // slate-500 fallback
-          }))
-          return (
-            <div className="mb-8">
-              <AssetAllocationBar data={allocationData} title="Asset Allocation" />
-            </div>
-          )
-        })()}
+        {(schemeDetails.length > 0 || stockRows.length > 0 || npsHoldings.length > 0) && (
+          <div className="mb-8">
+            {loading ? (
+              <div className="h-8 w-full bg-gray-200 animate-pulse rounded" />
+            ) : (
+              (() => {
+                // Prepare allocation data for MF
+                const mfAlloc = schemeDetails.map(s => ({
+                  type: s.scheme_name,
+                  value: s.current_value,
+                  category: (() => {
+                    const name = (s.scheme_name || '').toLowerCase();
+                    if (name.includes('debt') || name.includes('liquid') || name.includes('income') || name.includes('gilt') || name.includes('bond')) return 'Debt';
+                    return 'Equity';
+                  })()
+                }))
+                const stockAlloc = stockRows.map(stock => {
+                  const price = stockPrices[stock.stock_code]
+                  const value = price ? stock.quantity * price.inr : 0
+                  return {
+                    type: stock.stock_code,
+                    value,
+                    category: 'Equity'
+                  }
+                })
+                const npsAlloc = npsHoldings.map(nps => {
+                  const name = (nps.fund_name || '').toLowerCase();
+                  let category = 'Other';
+                  if (name.includes('scheme e') || name.includes('scheme a')) category = 'Equity';
+                  else if (name.includes('scheme g') || name.includes('scheme c')) category = 'Debt';
+                  return {
+                    type: nps.fund_name,
+                    value: nps.current_value,
+                    category
+                  }
+                })
+                const allAlloc = [...mfAlloc, ...stockAlloc, ...npsAlloc]
+                const allocationMap: Record<string, number> = {}
+                for (const item of allAlloc) {
+                  if (!item.value || item.value <= 0) continue;
+                  allocationMap[item.category] = (allocationMap[item.category] || 0) + item.value
+                }
+                const totalValue = Object.values(allocationMap).reduce((sum, v) => sum + v, 0);
+                const colorMap: Record<string, string> = {
+                  Equity: '#a5b4fc',
+                  Debt: '#bbf7d0',
+                  Other: '#f3e8ff',
+                };
+                const allocationData = Object.entries(allocationMap).map(([category, value]) => ({
+                  category,
+                  value,
+                  percentage: totalValue > 0 ? (value / totalValue) * 100 : 0,
+                  color: colorMap[category] || '#64748b',
+                }))
+                return <AssetAllocationBar data={allocationData} title="Asset Allocation" />
+              })()
+            )}
+          </div>
+        )}
 
         {/* Scheme Details Table */}
-        {schemeDetails.length > 0 && (
+        {loading ? (
+          <div className="mb-8">
+            <div className="h-6 w-40 bg-gray-200 animate-pulse rounded mb-4" />
+            <div className="h-10 w-full bg-gray-100 animate-pulse rounded mb-2" />
+            <div className="h-10 w-full bg-gray-100 animate-pulse rounded mb-2" />
+            <div className="h-10 w-full bg-gray-100 animate-pulse rounded mb-2" />
+          </div>
+        ) : schemeDetails.length > 0 && (
           <div>
             <h3 className="text-xl font-bold text-gray-900 mb-6">Mutual Funds</h3>
             {/* Compact MF Stat Cards - full width */}
