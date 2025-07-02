@@ -688,7 +688,7 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
       let mappedStocks: any[] = []
 
       // Debug: print mappings for this goal
-      console.log('[XIRR DEBUG] Goal:', goal.name, 'Mappings:', mappings)
+    //  console.log('[XIRR DEBUG] Goal:', goal.name, 'Mappings:', mappings)
 
       // Process each mapping based on source type
       for (const mapping of mappings) {
@@ -747,7 +747,7 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
           const portfolioData = await getPortfolioByScheme(userId, mapping.scheme_name)
           for (const item of portfolioData) {
             // Get transactions for this scheme
-            console.log('[XIRR DEBUG] Fetching transactions for:', mapping.scheme_name, mapping.folio)
+          //  console.log('[XIRR DEBUG] Fetching transactions for:', mapping.scheme_name, mapping.folio)
             const { data: transactions } = await supabaseServer
               .from('transactions')
               .select('*')
@@ -889,8 +889,8 @@ export async function getLatestNavDate() {
       .limit(1)
       .single()
 
-    console.log('🔍 DEBUG - Raw data from nav_data query:', data)
-    console.log('🔍 DEBUG - Error from nav_data query:', error)
+  //  console.log('🔍 DEBUG - Raw data from nav_data query:', data)
+    // console.log('🔍 DEBUG - Error from nav_data query:', error)
 
     if (error) {
       console.error('Error fetching latest NAV date:', error)
@@ -898,7 +898,7 @@ export async function getLatestNavDate() {
     }
 
     const result = data?.nav_date || null
-    console.log('🔍 DEBUG - Returning nav_date:', result)
+  //  console.log('🔍 DEBUG - Returning nav_date:', result)
     return result
   } catch (error) {
     console.error('Error in getLatestNavDate:', error)
@@ -910,8 +910,8 @@ export async function getLatestNavDate() {
 export async function isNavUpToDate() {
   try {
     const latestNavDate = await getLatestNavDate()
-    console.log('🔍 DEBUG - Latest NAV date from DB:', latestNavDate)
-    console.log('🔍 DEBUG - Latest NAV date type:', typeof latestNavDate)
+   // console.log('🔍 DEBUG - Latest NAV date from DB:', latestNavDate)
+   // console.log('🔍 DEBUG - Latest NAV date type:', typeof latestNavDate)
 
     if (!latestNavDate) {
       console.log('🔍 DEBUG - No NAV date found, returning false')

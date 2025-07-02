@@ -142,7 +142,7 @@ async function fetchMultipleStockPrices(symbols: string[], exchanges?: string[])
     const exchange = exchanges?.[i]
     try {
       const result = await fetchStockPrice(symbol, exchange)
-      console.log('[STOCK_PRICE_ROSHAN] result: ', result, symbol, exchange)
+     // console.log('[STOCK_PRICE_ROSHAN] result: ', result, symbol, exchange)
       results[symbol] = result
     } catch (error) {
       // If fetching fails, set price: null and currency: 'INR', and include error
@@ -158,8 +158,8 @@ async function fetchMultipleStockPrices(symbols: string[], exchanges?: string[])
 export async function POST(request: NextRequest) {
   try {
     const { symbols, exchanges } = await request.json()
-    console.log('[DEBUG] Incoming symbols:', symbols)
-    console.log('[DEBUG] Incoming exchanges:', exchanges)
+   // console.log('[DEBUG] Incoming symbols:', symbols)
+   // console.log('[DEBUG] Incoming exchanges:', exchanges)
     if (!symbols || !Array.isArray(symbols)) {
       console.log('[DEBUG] 400: symbols array is missing or invalid')
       return NextResponse.json(
@@ -187,8 +187,8 @@ export async function POST(request: NextRequest) {
         filteredExchanges.push(exchanges[i])
       }
     }
-    console.log('[DEBUG] Filtered symbols:', filteredSymbols)
-    console.log('[DEBUG] Filtered exchanges:', filteredExchanges)
+   // console.log('[DEBUG] Filtered symbols:', filteredSymbols)
+   // console.log('[DEBUG] Filtered exchanges:', filteredExchanges)
     if (filteredSymbols.length === 0) {
       console.log('[DEBUG] No valid symbols after filtering, returning empty prices')
       return NextResponse.json({ success: true, prices: {}, timestamp: new Date().toISOString() })

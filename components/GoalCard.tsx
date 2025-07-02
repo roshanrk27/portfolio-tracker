@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import GoalMappingModal from './GoalMappingModal'
 import GoalEditModal from './GoalEditModal'
 import GoalDetailsModal from './GoalDetailsModal'
@@ -30,14 +30,24 @@ interface GoalCardProps {
   onEdit?: (goal: Goal) => void
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
+  stockPrices?: Record<string, number>
 }
 
-export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
+export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, stockPrices }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [liveStockValue, setLiveStockValue] = useState<number | null>(null)
+
+  const liveStockValue = (goal.mappedStocks || []).reduce((total, stock) => {
+    if (!stockPrices) return total
+    const key = `${stock.stock_code}|${stock.exchange}`
+    const price = stockPrices[key]
+    if (price) {
+      return total + stock.quantity * price
+    }
+    return total
+  }, 0)
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -90,32 +100,6 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
   const daysRemaining = calculateDaysRemaining()
   const progressColor = getProgressColor(progress)
   const statusColor = getStatusColor(daysRemaining)
-
-  useEffect(() => {
-    async function fetchStockValues() {
-      if (!goal.mappedStocks || goal.mappedStocks.length === 0) {
-        setLiveStockValue(0)
-        return
-      }
-      let total = 0
-      for (const stock of goal.mappedStocks) {
-        try {
-          const res = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
-          if (res.ok) {
-            const data = await res.json()
-            if (data.success && data.price) {
-              total += stock.quantity * data.price
-            }
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-      setLiveStockValue(total)
-    }
-    fetchStockValues()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goal.mappedStocks && JSON.stringify(goal.mappedStocks)])
 
   return (
     <>
@@ -236,7 +220,7 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
           <div className="mb-4 p-3 bg-blue-50 rounded-lg">
             <h4 className="text-sm font-medium text-gray-700 mb-2">Investment Breakdown</h4>
             <div className="space-y-2">
-              {goal.mutual_fund_value && goal.mutual_fund_value > 0 && (
+              {goal.mutual_fund_value && goal.mutual_fund_value >= 0 && (
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
@@ -260,13 +244,22 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
                   <span className="text-sm font-medium text-gray-900">{formatCurrency(goal.nps_value)}</span>
                 </div>
               )}
-              {liveStockValue !== null && (
+              {/* Stocks breakdown row */}
+              {liveStockValue !== null ? (
                 <div className="flex justify-between items-center">
                   <div className="flex items-center space-x-2">
                     <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                     <span className="text-sm text-gray-600">Stocks</span>
                   </div>
                   <span className="text-sm font-medium text-gray-900">{formatCurrency(liveStockValue)}</span>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Stocks</span>
+                  </div>
+                  <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
                 </div>
               )}
             </div>
