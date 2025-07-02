@@ -762,6 +762,7 @@ export default function Dashboard() {
                     key={goal.id}
                     goal={goal}
                     stockPrices={stockPrices}
+                    stockPricesLoading={stockLoading}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}

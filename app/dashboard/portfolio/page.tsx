@@ -40,6 +40,7 @@ export default function PortfolioDashboard() {
   const [schemeXirrMap, setSchemeXirrMap] = useState<Record<string, string>>({})
   const [xirrLoading, setXirrLoading] = useState(true)
   const [mfXirr, setMfXirr] = useState<{ formattedXIRR: string; xirr: number; converged: boolean } | null>(null)
+  const [sortState, setSortState] = useState<'default' | 'xirr-asc' | 'xirr-desc'>('default')
   const router = useRouter()
 
   useEffect(() => {
@@ -133,6 +134,55 @@ export default function PortfolioDashboard() {
         setError(err.message)
       }
     }
+  }
+
+  // Helper to get XIRR value for a holding (number or null)
+  const getXirrValue = (holding: PortfolioHolding) => {
+    const xirrKey = `${holding.scheme_name}__${holding.folio}`
+    if (schemeXirrMap[xirrKey]) {
+      const match = schemeXirrMap[xirrKey].match(/-?\d+(\.\d+)?/)
+      if (match) return parseFloat(match[0])
+    }
+    return null
+  }
+
+  // Sorting logic
+  let sortedPortfolio = [...portfolio]
+  if (sortState === 'xirr-asc') {
+    sortedPortfolio.sort((a, b) => {
+      const xirrA = getXirrValue(a)
+      const xirrB = getXirrValue(b)
+      if (xirrA === null && xirrB === null) return 0
+      if (xirrA === null) return 1
+      if (xirrB === null) return -1
+      return xirrA - xirrB
+    })
+  } else if (sortState === 'xirr-desc') {
+    sortedPortfolio.sort((a, b) => {
+      const xirrA = getXirrValue(a)
+      const xirrB = getXirrValue(b)
+      if (xirrA === null && xirrB === null) return 0
+      if (xirrA === null) return 1
+      if (xirrB === null) return -1
+      return xirrB - xirrA
+    })
+  } else {
+    // Default: folio + scheme_name
+    sortedPortfolio.sort((a, b) => {
+      if (a.folio === b.folio) {
+        return a.scheme_name.localeCompare(b.scheme_name)
+      }
+      return a.folio.localeCompare(b.folio)
+    })
+  }
+
+  // Handler for XIRR header click
+  const handleXirrHeaderClick = () => {
+    setSortState((prev) => {
+      if (prev === 'default') return 'xirr-asc'
+      if (prev === 'xirr-asc') return 'xirr-desc'
+      return 'default'
+    })
   }
 
   if (loading) {
@@ -263,9 +313,6 @@ export default function PortfolioDashboard() {
                     Scheme
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Folio
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Units
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -274,8 +321,14 @@ export default function PortfolioDashboard() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Current Value
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer select-none"
+                    onClick={handleXirrHeaderClick}
+                    title="Sort by XIRR"
+                  >
                     XIRR
+                    {sortState === 'xirr-asc' && <span className="ml-1">▲</span>}
+                    {sortState === 'xirr-desc' && <span className="ml-1">▼</span>}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Last Update
@@ -285,7 +338,7 @@ export default function PortfolioDashboard() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {(loading || xirrLoading) ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-gray-400">
+                    <td colSpan={6} className="py-8 text-center text-gray-400">
                       <div className="flex flex-col items-center justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
                         Loading holdings...
@@ -293,20 +346,33 @@ export default function PortfolioDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  portfolio.map((holding) => {
+                  sortedPortfolio.map((holding) => {
                     const xirrKey = `${holding.scheme_name}__${holding.folio}`
+                    // --- XIRR-based row coloring (easy to revert) ---
+                    let rowColor = ''
+                    let xirrValue: number | null = null
+                    if (schemeXirrMap[xirrKey]) {
+                      const match = schemeXirrMap[xirrKey].match(/-?\d+(\.\d+)?/)
+                      if (match) xirrValue = parseFloat(match[0])
+                    }
+                    if (xirrValue !== null) {
+                      if (xirrValue <= 0) rowColor = 'bg-red-100'
+                      else if (xirrValue > 12) rowColor = 'bg-green-50'
+                      else rowColor = 'bg-gray-50'
+                    }
                     return (
-                      <tr key={holding.id} className="hover:bg-gray-50">
+                      <tr key={holding.id} className={`hover:bg-gray-100 ${rowColor}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
                             <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
-                            {holding.isin && (
-                              <div className="text-sm text-gray-500">{holding.isin}</div>
+                            {(holding.folio || holding.isin) && (
+                              <div className="text-xs mt-1">
+                                {holding.folio && <span className="text-indigo-600">Folio: {holding.folio}</span>}
+                                {holding.folio && holding.isin && <span className="text-gray-400"> | </span>}
+                                {holding.isin && <span className="text-gray-500">ISIN: {holding.isin}</span>}
+                              </div>
                             )}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {holding.folio}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {holding.latest_unit_balance.toLocaleString('en-IN', { maximumFractionDigits: 4 })}

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import StockForm from '@/components/StockForm'
 import { fetchStockPrices, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
 import { useState as useMenuState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 interface Stock {
   id: string
@@ -27,10 +28,6 @@ interface StockWithValue extends Stock {
 }
 
 export default function StocksPage() {
-  const [stocks, setStocks] = useState<StockWithValue[]>([])
-  const [loading, setLoading] = useState(true)
-  const [pricesLoading, setPricesLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [showStockForm, setShowStockForm] = useState(false)
   const router = useRouter()
   const [editStock, setEditStock] = useState<StockWithValue | null>(null)
@@ -40,60 +37,38 @@ export default function StocksPage() {
   const [editLoading, setEditLoading] = useState(false)
   const [openMenuId, setOpenMenuId] = useMenuState<string | null>(null)
   const menuRefs = useRef<{ [id: string]: HTMLDivElement | null }>({})
+  const [sortState, setSortState] = useState<{ key: 'alphabetical' | 'value', direction: 'asc' | 'desc' }>({ key: 'alphabetical', direction: 'asc' })
+  const queryClient = useQueryClient()
 
-  useEffect(() => {
-    const checkAuth = async () => {
+  // React Query: fetch stocks and prices together
+  const {
+    data: stocks = [],
+    isLoading: loading,
+    isFetching: pricesLoading,
+    error,
+    refetch
+  } = useQuery<StockWithValue[]>({
+    queryKey: ['stocks'],
+    queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/auth/login')
-      } else {
-        setLoading(false)
-        loadStocks(session.user.id)
-      }
-    }
-
-    checkAuth()
-  }, [router])
-
-  const loadStocks = async (userId: string) => {
-    try {
+      if (!session) throw new Error('Not authenticated')
       const { data, error } = await supabase
         .from('stocks')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error loading stocks:', error)
-        setError(error.message)
-        return
-      }
-
-      setStocks(data || [])
-      
+      if (error) throw error
+      if (!data || data.length === 0) return []
       // Fetch current prices for all stocks
-      if (data && data.length > 0) {
-        await fetchCurrentPrices(data)
-      }
-    } catch (err: any) {
-      setError(err.message)
-    }
-  }
-
-  const fetchCurrentPrices = async (stockData: Stock[]) => {
-    try {
-      setPricesLoading(true)
-      // Filter out stocks with empty/invalid stock_code or exchange
-      const validStocks = stockData.filter(stock =>
+      const validStocks = data.filter((stock: StockWithValue) =>
         typeof stock.stock_code === 'string' && stock.stock_code.trim() !== '' &&
           typeof stock.exchange === 'string' && stock.exchange.trim() !== ''
       )
-      const symbols = validStocks.map(stock => stock.stock_code)
-      const exchanges = validStocks.map(stock => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
+      const symbols = validStocks.map((stock: StockWithValue) => stock.stock_code)
+      const exchanges = validStocks.map((stock: StockWithValue) => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
       const pricesResponse = await fetchStockPrices(symbols, exchanges)
       if (pricesResponse && pricesResponse.success) {
-        const updatedStocks = stockData.map(stock => {
-          // If this stock was filtered out, just return as is
+        return data.map((stock: StockWithValue) => {
           if (!symbols.includes(stock.stock_code)) return stock
           const priceData = pricesResponse.prices[stock.stock_code]
           if (priceData && priceData.price !== null) {
@@ -108,7 +83,6 @@ export default function StocksPage() {
               originalCurrency: priceData.originalCurrency
             }
           } else {
-            // If price is unavailable, set currentPrice/currentValue to undefined
             return {
               ...stock,
               currentPrice: undefined,
@@ -120,21 +94,16 @@ export default function StocksPage() {
             }
           }
         })
-        setStocks(updatedStocks)
       }
-    } catch (err: any) {
-      console.error('Error fetching stock prices:', err)
-    } finally {
-      setPricesLoading(false)
-    }
-  }
+      return data
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes to refresh of cache
+    refetchOnWindowFocus: false,
+  })
 
   const handleStockAdded = async () => {
     setShowStockForm(false)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session) {
-      await loadStocks(session.user.id)
-    }
+    await refetch()
   }
 
   const handleStockDeleted = async (stockId: string) => {
@@ -149,11 +118,7 @@ export default function StocksPage() {
         return
       }
 
-      // Refresh stocks list
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        await loadStocks(session.user.id)
-      }
+      await refetch()
     } catch (err: any) {
       console.error('Error in handleStockDeleted:', err)
     }
@@ -168,7 +133,7 @@ export default function StocksPage() {
   }
 
   const getTotalPortfolioValue = () => {
-    return stocks.reduce((total, stock) => {
+    return (stocks as StockWithValue[]).reduce((total: number, stock: StockWithValue) => {
       return total + (stock.currentValue || 0)
     }, 0)
   }
@@ -218,13 +183,29 @@ export default function StocksPage() {
         setEditLoading(false)
         return
       }
-      await loadStocks(session.user.id)
+      await refetch()
       closeEditModal()
     } catch (err: any) {
       setEditError(err.message || 'Error updating stock')
     } finally {
       setEditLoading(false)
     }
+  }
+
+  // Sorting logic for stocks
+  let sortedStocks = [...(stocks as StockWithValue[])]
+  if (sortState.key === 'value') {
+    sortedStocks.sort((a: StockWithValue, b: StockWithValue) => {
+      const aVal = a.currentValue || 0
+      const bVal = b.currentValue || 0
+      return sortState.direction === 'asc' ? aVal - bVal : bVal - aVal
+    })
+  } else {
+    sortedStocks.sort((a: StockWithValue, b: StockWithValue) => {
+      return sortState.direction === 'asc'
+        ? a.stock_code.localeCompare(b.stock_code)
+        : b.stock_code.localeCompare(a.stock_code)
+    })
   }
 
   if (loading) {
@@ -243,9 +224,9 @@ export default function StocksPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="text-red-600 text-xl mb-4">Error loading stocks</div>
-          <p className="text-gray-600">{error}</p>
+          <p className="text-gray-600">{(error as Error).message}</p>
           <button 
-            onClick={() => window.location.reload()}
+            onClick={() => refetch()}
             className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
           >
             Retry
@@ -278,7 +259,7 @@ export default function StocksPage() {
         </div>
 
         {/* Portfolio Summary Card */}
-        {stocks.length > 0 && (
+        {(stocks as StockWithValue[]).length > 0 && (
           <div className="mb-6">
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
               <div className="flex items-center justify-between">
@@ -300,11 +281,26 @@ export default function StocksPage() {
                 )}
               </div>
             </div>
+            {/* Sorting Controls */}
+            <div className="flex justify-end mt-2 space-x-2">
+              <button
+                className={`px-3 py-1 rounded border text-sm ${sortState.key === 'alphabetical' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+                onClick={() => setSortState({ key: 'alphabetical', direction: 'asc' })}
+              >
+                Sort A-Z
+              </button>
+              <button
+                className={`px-3 py-1 rounded border text-sm ${sortState.key === 'value' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
+                onClick={() => setSortState({ key: 'value', direction: 'desc' })}
+              >
+                Sort by Value
+              </button>
+            </div>
           </div>
         )}
 
         {/* Stocks List */}
-        {stocks.length === 0 ? (
+        {(stocks as StockWithValue[]).length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <div className="text-gray-400 mb-4">
               <svg className="mx-auto h-16 w-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -329,17 +325,21 @@ export default function StocksPage() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Stock Code
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        onClick={() => setSortState(prev => prev.key === 'alphabetical' ? { key: 'alphabetical', direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { key: 'alphabetical', direction: 'asc' })}
+                        title="Sort by Stock Code">
+                      Stock Code {sortState.key === 'alphabetical' && (sortState.direction === 'asc' ? <span className="ml-1">▲</span> : <span className="ml-1">▼</span>)}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Quantity
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Current Price
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                        onClick={() => setSortState(prev => prev.key === 'value' ? { key: 'value', direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { key: 'value', direction: 'desc' })}
+                        title="Sort by Value">
+                      Current Value {sortState.key === 'value' && (sortState.direction === 'asc' ? <span className="ml-1">▲</span> : <span className="ml-1">▼</span>)}
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Current Value
+                      Current Price
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Exchange
@@ -353,13 +353,22 @@ export default function StocksPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {stocks.map((stock) => (
+                  {(sortedStocks as StockWithValue[]).map((stock: StockWithValue) => (
                     <tr key={stock.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{stock.stock_code}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{stock.quantity.toLocaleString()}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {pricesLoading ? (
+                            <div className="animate-pulse bg-gray-200 h-4 w-20 rounded"></div>
+                          ) : (
+                            formatStockValue(stock.currentValue || 0)
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
@@ -374,15 +383,6 @@ export default function StocksPage() {
                             {formatStockPrice(stock.originalPrice, stock.originalCurrency)}
                           </div>
                         )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {pricesLoading ? (
-                            <div className="animate-pulse bg-gray-200 h-4 w-20 rounded"></div>
-                          ) : (
-                            formatStockValue(stock.currentValue || 0)
-                          )}
-                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{stock.exchange}</div>
@@ -436,7 +436,7 @@ export default function StocksPage() {
         <StockForm
           onStockAdded={handleStockAdded}
           onCancel={() => setShowStockForm(false)}
-          existingHoldings={stocks.map(s => ({ stock_code: s.stock_code, exchange: s.exchange }))}
+          existingHoldings={(stocks as StockWithValue[]).map((s: StockWithValue) => ({ stock_code: s.stock_code, exchange: s.exchange }))}
         />
       )}
 

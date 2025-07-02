@@ -31,9 +31,10 @@ interface GoalCardProps {
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
   stockPrices?: Record<string, number>
+  stockPricesLoading?: boolean
 }
 
-export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, stockPrices }: GoalCardProps) {
+export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, stockPrices, stockPricesLoading }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -245,23 +246,17 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, sto
                 </div>
               )}
               {/* Stocks breakdown row */}
-              {liveStockValue !== null ? (
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Stocks</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{formatCurrency(liveStockValue)}</span>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-sm text-gray-600">Stocks</span>
                 </div>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Stocks</span>
-                  </div>
+                {stockPricesLoading ? (
                   <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
-                </div>
-              )}
+                ) : (
+                  <span className="text-sm font-medium text-gray-900">{formatCurrency(liveStockValue)}</span>
+                )}
+              </div>
             </div>
           </div>
         )}

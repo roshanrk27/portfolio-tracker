@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { isNavUpToDate, getLatestNavDate } from '@/lib/portfolioUtils'
+import { supabase } from '@/lib/supabaseClient'
 
 interface RefreshNavButtonProps {
   onRefresh?: () => void
@@ -50,8 +51,17 @@ export default function RefreshNavButton({ onRefresh, className }: RefreshNavBut
   const handleRefresh = async () => {
     setIsLoading(true)
     try {
+      // Get current user session
+      const { data: { session } } = await supabase.auth.getSession()
+      const userId = session?.user?.id
+      if (!userId) {
+        throw new Error('User not logged in')
+      }
       const response = await fetch('/api/refresh-nav', {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'x-user-id': userId
+        }
       })
       
       if (response.ok) {
