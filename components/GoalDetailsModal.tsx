@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { getGoalMappings, getGoalXIRR } from '@/lib/portfolioUtils'
 import { calculateSchemeXIRR, formatXIRR } from '@/lib/xirr'
 import { calculateAssetAllocation } from '@/lib/assetAllocation'
-import AllocationPie from './AllocationPie'
+import AssetAllocationBar from './AssetAllocationBar'
 
 interface GoalDetailsModalProps {
   goal: {
@@ -32,6 +32,15 @@ interface SchemeDetails {
   formattedXIRR?: string
 }
 
+interface NpsHoldingDetail {
+  id: string
+  fund_name: string
+  fund_code: string
+  units: number
+  nav: number
+  current_value: number
+}
+
 export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProps) {
   const [schemeDetails, setSchemeDetails] = useState<SchemeDetails[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,9 +55,11 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
   } | null>(null)
   const [stockRows, setStockRows] = useState<any[]>([])
   const [stockPrices, setStockPrices] = useState<Record<string, { inr: number; usd?: number }>>({})
+  const [npsHoldings, setNpsHoldings] = useState<NpsHoldingDetail[]>([])
 
   useEffect(() => {
     loadSchemeDetails()
+    loadNpsDetails()
   }, [goal.id])
 
   useEffect(() => {
@@ -98,13 +109,9 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       
       // Get detailed information for each mapped scheme (only mutual funds)
       const details: SchemeDetails[] = []
-      
       for (const mapping of mappings) {
-        // Skip stocks - they will be handled separately
-        if (mapping.source_type === 'stock') {
-          continue
-        }
-        
+        // Only include mutual fund mappings
+        if (mapping.source_type !== 'mutual_fund') continue;
         // Get current portfolio data for this scheme
         const { data: portfolioData } = await supabase
           .from('current_portfolio')
@@ -193,6 +200,60 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     }
   }
 
+  const loadNpsDetails = async () => {
+    try {
+      setLoading(true)
+      setError('')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      // Get goal mappings
+      const mappings = await getGoalMappings(goal.id)
+      const npsMappings = mappings.filter((m: any) => m.source_type === 'nps' && m.source_id)
+      if (npsMappings.length === 0) {
+        setNpsHoldings([])
+        return
+      }
+      const npsIds = npsMappings.map((m: any) => m.source_id)
+      // Fetch nps_holdings for these IDs
+      const { data: holdings, error: holdingsError } = await supabase
+        .from('nps_holdings')
+        .select('id, fund_code, units, nps_funds(fund_name)')
+        .in('id', npsIds)
+      if (holdingsError) throw holdingsError
+      // Fetch NAVs for all fund_codes
+      const fundCodes = Array.from(new Set((holdings || []).map((h: any) => h.fund_code)))
+      let navMap: Record<string, number> = {}
+      if (fundCodes.length > 0) {
+        const { data: navs, error: navsError } = await supabase
+          .from('nps_nav')
+          .select('fund_code, nav')
+          .in('fund_code', fundCodes)
+        if (navsError) throw navsError
+        navMap = (navs || []).reduce((acc: Record<string, number>, nav: any) => {
+          acc[nav.fund_code] = parseFloat(nav.nav)
+          return acc
+        }, {})
+      }
+      // Prepare details
+      const details: NpsHoldingDetail[] = (holdings || []).map((h: any) => {
+        const nav = navMap[h.fund_code] || 0
+        return {
+          id: h.id,
+          fund_name: h.nps_funds?.fund_name || h.fund_code,
+          fund_code: h.fund_code,
+          units: parseFloat(h.units),
+          nav,
+          current_value: nav * parseFloat(h.units)
+        }
+      })
+      setNpsHoldings(details)
+    } catch (err: any) {
+      setError(err.message || 'Error loading NPS details')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -209,12 +270,42 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     }).format(num)
   }
 
+  const formatNav = (num: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(num)
+  }
+
   const calculateTotalValue = () => {
     return schemeDetails.reduce((sum, scheme) => sum + scheme.current_value, 0)
   }
 
   const calculateTotalUnits = () => {
     return schemeDetails.reduce((sum, scheme) => sum + scheme.balance_units, 0)
+  }
+
+  // Calculate true current value (MF + Stocks + NPS)
+  const calculateTrueCurrentValue = () => {
+    const mfValue = schemeDetails.reduce((sum, scheme) => sum + scheme.current_value, 0)
+    const stockValue = stockRows.reduce((sum, stock) => {
+      const price = stockPrices[stock.stock_code]
+      return sum + (price ? stock.quantity * price.inr : 0)
+    }, 0)
+    const npsValue = npsHoldings.reduce((sum, nps) => sum + nps.current_value, 0)
+    return mfValue + stockValue + npsValue
+  }
+
+  // Calculate % Goal Achieved
+  const percentGoalAchieved = () => {
+    const percent = goal.target_amount > 0 ? (calculateTrueCurrentValue() / goal.target_amount) * 100 : 0;
+    return Math.min(percent, 100);
+  }
+
+  // Format date as DD MMM YYYY
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
   if (loading) {
@@ -256,101 +347,127 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
           </div>
         )}
 
-        {/* Goal Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
-            <p className="text-sm font-semibold text-blue-700 mb-2">Target Amount</p>
-            <p className="text-2xl font-bold text-blue-900">{formatCurrency(goal.target_amount)}</p>
+        {/* Top 4 Summary Cards in a Row */}
+        <div className="flex flex-row flex-wrap gap-4 mb-8 w-full">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
+            <span className="text-sm font-semibold text-blue-700 mb-1">Target Amount</span>
+            <span className="text-lg font-bold text-blue-900">{formatCurrency(goal.target_amount)}</span>
           </div>
-          <div className="bg-green-50 rounded-xl p-6 border border-green-200">
-            <p className="text-sm font-semibold text-green-700 mb-2">Current Value</p>
-            <p className="text-2xl font-bold text-green-900">{formatCurrency(goal.current_amount)}</p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
+            <span className="text-sm font-semibold text-yellow-700 mb-1">Target Date</span>
+            <span className="text-lg font-bold text-yellow-900">{formatDate(goal.target_date)}</span>
           </div>
-          <div className="bg-purple-50 rounded-xl p-6 border border-purple-200">
-            <p className="text-sm font-semibold text-purple-700 mb-2">Total Units</p>
-            <p className="text-2xl font-bold text-purple-900">{formatNumber(calculateTotalUnits())}</p>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
+            <span className="text-sm font-semibold text-green-700 mb-1">Current Value</span>
+            <span className="text-lg font-bold text-green-900">{formatCurrency(calculateTrueCurrentValue())}</span>
           </div>
-          <div className="bg-orange-50 rounded-xl p-6 border border-orange-200">
-            <p className="text-sm font-semibold text-orange-700 mb-2">Mapped Schemes</p>
-            <p className="text-2xl font-bold text-orange-900">{schemeDetails.length}</p>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 flex-1 min-w-[180px] flex flex-col items-center justify-center">
+            <span className="text-sm font-semibold text-green-700 mb-1">% Goal Achieved</span>
+            <span className="text-lg font-bold text-green-900">{percentGoalAchieved().toFixed(1)}%</span>
           </div>
         </div>
 
-        {/* Goal XIRR Card */}
-        {goalXIRR && (
-          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-8 mb-8 border border-indigo-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">Goal XIRR</h3>
-                <p className="text-base text-gray-600">
-                  {goalXIRR.converged ? 'Calculated successfully' : 'Calculation may be approximate'}
-                </p>
-              </div>
-              <div className="text-right">
-                <div className={`text-4xl font-bold ${
-                  goalXIRR.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {goalXIRR.formattedXIRR}
-                </div>
-                <div className="text-base text-gray-600 mt-2">
-                  {goalXIRR.converged ? '✓ Converged' : '⚠ Limited data'}
-                </div>
-              </div>
+        {/* Asset Allocation Bar - just below top cards */}
+        {(schemeDetails.length > 0 || stockRows.length > 0 || npsHoldings.length > 0) && (() => {
+          // Prepare allocation data for MF
+          const mfAlloc = schemeDetails.map(s => ({
+            type: s.scheme_name,
+            value: s.current_value,
+            category: (() => {
+              const name = (s.scheme_name || '').toLowerCase();
+              if (name.includes('debt') || name.includes('liquid') || name.includes('income') || name.includes('gilt') || name.includes('bond')) return 'Debt';
+              return 'Equity';
+            })()
+          }))
+          // Stocks: all Equity
+          const stockAlloc = stockRows.map(stock => {
+            const price = stockPrices[stock.stock_code]
+            const value = price ? stock.quantity * price.inr : 0
+            return {
+              type: stock.stock_code,
+              value,
+              category: 'Equity'
+            }
+          })
+          // NPS: categorize by scheme name
+          const npsAlloc = npsHoldings.map(nps => {
+            const name = (nps.fund_name || '').toLowerCase();
+            let category = 'Other';
+            if (name.includes('scheme e') || name.includes('scheme a')) category = 'Equity';
+            else if (name.includes('scheme g') || name.includes('scheme c')) category = 'Debt';
+            return {
+              type: nps.fund_name,
+              value: nps.current_value,
+              category
+            }
+          })
+          // Aggregate by category
+          const allAlloc = [...mfAlloc, ...stockAlloc, ...npsAlloc]
+          const allocationMap: Record<string, number> = {}
+          for (const item of allAlloc) {
+            if (!item.value || item.value <= 0) continue;
+            allocationMap[item.category] = (allocationMap[item.category] || 0) + item.value
+          }
+          const totalValue = Object.values(allocationMap).reduce((sum, v) => sum + v, 0);
+          // Subtle pastel color scheme
+          const colorMap: Record<string, string> = {
+            Equity: '#a5b4fc', // indigo-200
+            Debt: '#bbf7d0',   // green-200
+            Other: '#f3e8ff',  // purple-100
+          };
+          const allocationData = Object.entries(allocationMap).map(([category, value]) => ({
+            category,
+            value,
+            percentage: totalValue > 0 ? (value / totalValue) * 100 : 0,
+            color: colorMap[category] || '#64748b', // slate-500 fallback
+          }))
+          return (
+            <div className="mb-8">
+              <AssetAllocationBar data={allocationData} title="Asset Allocation" />
             </div>
-            {goalXIRR.error && (
-              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">{goalXIRR.error}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Asset Allocation Chart */}
-        {schemeDetails.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Asset Allocation</h3>
-            <div className="bg-white rounded-xl p-6 border border-gray-200">
-              {(() => {
-                const allocationData = calculateAssetAllocation(schemeDetails.map(s => ({
-                  scheme_name: s.scheme_name,
-                  current_value: s.current_value
-                })))
-                console.log('Allocation data:', allocationData)
-                return (
-                  <AllocationPie 
-                    data={allocationData}
-                    title="Portfolio Allocation"
-                  />
-                )
-              })()}
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* Scheme Details Table */}
         {schemeDetails.length > 0 && (
           <div>
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Scheme Details</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-6">Mutual Funds</h3>
+            {/* Compact MF Stat Cards - full width */}
+            <div className="flex flex-row flex-wrap gap-3 mb-4 w-full justify-between">
+              <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-2 flex flex-col items-center min-w-[120px] flex-1">
+                <span className="text-xs font-semibold text-purple-700">Total Units</span>
+                <span className="text-lg font-bold text-purple-900">{formatNumber(calculateTotalUnits())}</span>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-2 flex flex-col items-center min-w-[120px] flex-1">
+                <span className="text-xs font-semibold text-orange-700">Mapped Schemes</span>
+                <span className="text-lg font-bold text-orange-900">{schemeDetails.length}</span>
+              </div>
+              {goalXIRR && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2 flex flex-col items-center min-w-[120px] flex-1">
+                  <span className="text-xs font-semibold text-indigo-700">MF XIRR</span>
+                  <span className={`text-lg font-bold ${goalXIRR.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>{goalXIRR.formattedXIRR}</span>
+                </div>
+              )}
+            </div>
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Scheme Name</th>
+                    <th className="px-6 py-4 text-left text-sm text-gray-700">Scheme Name</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Folio</th>
                     <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">Units</th>
                     <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">NAV</th>
                     <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">Current Value</th>
                     <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">XIRR</th>
-                    <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">Allocation</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {schemeDetails.map((scheme, index) => (
                     <tr key={scheme.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{scheme.scheme_name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{scheme.scheme_name}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{scheme.folio || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatNumber(scheme.balance_units)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatCurrency(scheme.current_nav)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatNav(scheme.current_nav)}</td>
                       <td className="px-6 py-4 text-sm font-semibold text-gray-900 text-right">{formatCurrency(scheme.current_value)}</td>
                       <td className="px-6 py-4 text-sm text-right">
                         {scheme.formattedXIRR ? (
@@ -361,7 +478,6 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
                           <span className="text-gray-400">-</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 text-right">{scheme.allocation_percentage}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -398,6 +514,36 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
                       </tr>
                     )
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {npsHoldings.length > 0 && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-purple-700 mb-2">NPS Holdings</h3>
+            <div className="overflow-x-auto rounded-lg border border-purple-200 bg-purple-50">
+              <table className="min-w-full divide-y divide-purple-200">
+                <thead className="bg-purple-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Fund Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-700 uppercase tracking-wider">Fund Code</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-700 uppercase tracking-wider">Units</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-700 uppercase tracking-wider">NAV</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-700 uppercase tracking-wider">Current Value</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-purple-100">
+                  {npsHoldings.map(nps => (
+                    <tr key={nps.id}>
+                      <td className="px-4 py-2 text-sm text-purple-900">{nps.fund_name}</td>
+                      <td className="px-4 py-2 text-sm text-purple-900">{nps.fund_code}</td>
+                      <td className="px-4 py-2 text-sm text-purple-900 text-right">{formatNumber(nps.units)}</td>
+                      <td className="px-4 py-2 text-sm text-purple-900 text-right">{formatNav(nps.nav)}</td>
+                      <td className="px-4 py-2 text-sm font-semibold text-purple-900 text-right">{formatCurrency(nps.current_value)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

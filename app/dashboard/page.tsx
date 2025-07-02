@@ -7,6 +7,7 @@ import { getPortfolioSummary, getGoals, getGoalXIRR, getGoalMappings, getLatestN
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
 import RefreshNavButton from '@/components/RefreshNavButton'
+import { useQuery } from '@tanstack/react-query'
 
 interface PortfolioSummary {
   totalHoldings: number
@@ -45,25 +46,177 @@ interface Goal {
   nps_value?: number
 }
 
+async function getNpsValue(userId: string, navDate: string): Promise<number> {
+  // Fetch holdings
+  const { data: holdings, error: holdingsError } = await supabase
+    .from('nps_holdings')
+    .select('id, fund_code, units')
+    .eq('user_id', userId);
+  if (holdingsError) throw holdingsError;
+  // Fetch NAVs
+  const { data: navs, error: navsError } = await supabase
+    .from('nps_nav')
+    .select('fund_code, nav');
+  if (navsError) throw navsError;
+  const navMap: Record<string, number> = {};
+  for (const row of navs || []) {
+    navMap[row.fund_code] = parseFloat(row.nav);
+  }
+  let total = 0;
+  for (const h of holdings || []) {
+    const nav = navMap[h.fund_code] || 0;
+    total += nav * (parseFloat(h.units) || 0);
+  }
+  return total;
+}
+
+async function getStockSummary(userId: string, stockPrices?: Record<string, number>): Promise<StockSummary> {
+  try {
+    // Get all stocks for the user
+    const { data: stocks, error } = await supabase
+      .from('stocks')
+      .select('*')
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Error loading stocks:', error)
+      return {
+        totalStocks: 0,
+        totalStockValue: 0,
+        totalInvested: 0,
+        totalReturn: 0,
+        totalReturnPercentage: 0
+      }
+    }
+
+    if (!stocks || stocks.length === 0) {
+      return {
+        totalStocks: 0,
+        totalStockValue: 0,
+        totalInvested: 0,
+        totalReturn: 0,
+        totalReturnPercentage: 0
+      }
+    }
+
+    let totalStockValue = 0
+    let totalInvested = 0
+
+    // Use existing prices when available, fetch only missing ones
+    for (const stock of stocks) {
+      const key = `${stock.stock_code}|${stock.exchange}`
+      let price = null
+      // Check if we already have this price
+      if (stockPrices && stockPrices[key]) {
+        price = stockPrices[key]
+        console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] price exists for :', key, price)
+      } else {
+        // Only fetch if we don't have it
+        try {
+          console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] fetching price for :', key)
+          const response = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
+          if (response.ok) {
+            const priceData = await response.json()
+            if (priceData.success && priceData.price) {
+              price = priceData.price
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching price for ${stock.stock_code}:`, err)
+        }
+      }
+      if (price) {
+        const currentValue = stock.quantity * price
+        totalStockValue += currentValue
+      }
+    }
+
+    const totalReturn = totalStockValue - totalInvested
+    const totalReturnPercentage = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0
+
+    return {
+      totalStocks: stocks.length,
+      totalStockValue,
+      totalInvested,
+      totalReturn,
+      totalReturnPercentage
+    }
+  } catch (err) {
+    console.error('Error in getStockSummary:', err)
+    return {
+      totalStocks: 0,
+      totalStockValue: 0,
+      totalInvested: 0,
+      totalReturn: 0,
+      totalReturnPercentage: 0
+    }
+  }
+}
+
 export default function Dashboard() {
-  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
   const [stockSummary, setStockSummary] = useState<StockSummary | null>(null)
   const [goals, setGoals] = useState<Goal[]>([])
   const [portfolioXIRR, setPortfolioXIRR] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [portfolioLoading, setPortfolioLoading] = useState(true)
   const [stockLoading, setStockLoading] = useState(true)
   const [goalsLoading, setGoalsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
   const [isNavUpToDateState, setIsNavUpToDateState] = useState(false)
-  const [npsValue, setNpsValue] = useState<number | null>(null)
-  const [npsLoading, setNpsLoading] = useState(true)
   const [stockPrices, setStockPrices] = useState<Record<string, number>>({})
   const router = useRouter()
   
-//  console.log('[DEBUG_ROSHAN] Dashboard mounted')
+  // Fetch user session and NAV date for cache key
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchSessionAndNavDate = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/auth/login');
+        return;
+      }
+      setUserId(session.user.id);
+      const navDate = await getLatestNavDate();
+      setLatestNavDate(navDate);
+    };
+    fetchSessionAndNavDate();
+  }, [router]);
+
+  // React Query for MF Value (Portfolio Summary)
+  const {
+    data: portfolioSummary,
+    isLoading: portfolioLoadingRQ,
+    refetch: refetchPortfolioSummary
+  } = useQuery({
+    queryKey: ['portfolioSummary', userId, latestNavDate],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      return await getPortfolioSummary(userId);
+    },
+    enabled: !!userId && !!latestNavDate,
+    staleTime: 1000 * 60 * 60 * 12, // 12 hours
+  });
+
+  // Use React Query loading/error states for MF value
+  const portfolioLoading = portfolioLoadingRQ || !latestNavDate;
+
+  // React Query for NPS Value
+  const {
+    data: npsValue,
+    isLoading: npsLoading,
+    isError: npsError,
+    refetch: refetchNpsValue
+  } = useQuery<number, Error>({
+    queryKey: ['npsValue', userId, latestNavDate],
+    queryFn: async () => {
+      if (!userId || !latestNavDate) throw new Error('No user ID or NAV date');
+      return await getNpsValue(userId, latestNavDate);
+    },
+    enabled: !!userId && !!latestNavDate,
+    staleTime: 1000 * 60 * 60 * 12, // 12 hours
+  });
+
   // Compute a stable dependency for mapped stocks
   const mappedStocksKey = JSON.stringify(
     goals
@@ -71,8 +224,22 @@ export default function Dashboard() {
       .sort((a, b) => (a.symbol + a.exchange).localeCompare(b.symbol + b.exchange))
   )
 
+  const {
+    data: cachedStockSummary,
+    isLoading: stockLoadingRQ,
+    isError: stockSummaryError,
+    refetch: refetchStockSummary
+  } = useQuery<StockSummary, Error>({
+    queryKey: ['stockSummary', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      return await getStockSummary(userId, stockPrices);
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 15, // 15 minutes
+  });
+
   useEffect(() => {
- //   console.log('[DEBUG_ROSHAN] useEffect called')
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -83,25 +250,26 @@ export default function Dashboard() {
           const [summaryData, goalsData] = await Promise.all([
             getPortfolioSummary(session.user.id),
             getGoals(session.user.id),
-           // console.log('[DEBUG_ROSHAN] Goals & Summary collected:')
           ])
 
           // --- Batch fetch all mappings for all goals ---
           // 1. Gather all mappings for all goals
           const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)))
-          // 2. Collect all unique stock IDs and (scheme_name, folio) pairs
+          // 2. Collect all unique stock IDs, (scheme_name, folio) pairs, and NPS holding IDs
           const allStockIds: string[] = [];
           const allPortfolioPairs: { scheme_name: string; folio: string }[] = [];
+          const allNpsIds: string[] = [];
           goalsData.forEach((goal, i) => {
             for (const mapping of allMappings[i]) {
               if (mapping.source_type === 'stock' && mapping.source_id) {
                 allStockIds.push(mapping.source_id);
               } else if (mapping.source_type === 'mutual_fund') {
                 allPortfolioPairs.push({ scheme_name: mapping.scheme_name, folio: mapping.folio || '' });
+              } else if (mapping.source_type === 'nps' && mapping.source_id) {
+                allNpsIds.push(mapping.source_id);
               }
             }
           });
-         // console.log('[DEBUG_ROSHAN] All mappings collected:', allMappings)
           // Remove duplicates
           const uniqueStockIds = Array.from(new Set(allStockIds));
           const uniquePortfolioPairs = Array.from(new Set(allPortfolioPairs.map((p: { scheme_name: string; folio: string }) => `${p.scheme_name}|${p.folio}`)))
@@ -109,9 +277,8 @@ export default function Dashboard() {
               const [scheme_name, folio] = key.split('|');
               return { scheme_name, folio };
             });
-          // 3. Batch fetch all stocks and portfolios
-         // console.log('[DEBUG_ROSHAN] Fetching uniquestocks:', uniqueStockIds)
-         // console.log('[DEBUG_ROSHAN] Fetching unique portfolios:', uniquePortfolioPairs)
+          const uniqueNpsIds = Array.from(new Set(allNpsIds));
+          // 3. Batch fetch all stocks, portfolios, and NPS holdings
           let stocks: any[] = [];
           if (uniqueStockIds.length > 0) {
             const { data } = await supabase
@@ -123,36 +290,36 @@ export default function Dashboard() {
           }
           let portfolios: any[] = [];
           if (uniquePortfolioPairs.length > 0) {
-            /* const orFilters = uniquePortfolioPairs
-              .map(({ scheme_name, folio }: { scheme_name: string; folio: string }) =>
-                `(scheme_name.eq.${scheme_name}&folio.eq.${folio})`
-              )
-              .join(',');*/
-           /*   const orFilters = uniquePortfolioPairs
-              .map(({ scheme_name, folio }) => {
-                const safeScheme = `"${scheme_name.replace(/"/g, '\\"')}"`;
-                const safeFolio = `"${folio.replace(/"/g, '\\"')}"`;
-                return `(scheme_name.eq.${safeScheme}&folio.eq.${safeFolio})`;
-              })
-              .join(',');
-              //console.log('[DEBUG_ROSHAN] orFilters:', orFilters);
-            
-            /*  const { data } = await supabase
-              .from('current_portfolio')
-              .select('scheme_name, folio, current_value')
-              .eq('user_id', session.user.id)
-              .or(orFilters)*/
-              const { data } = await supabase
+            const { data } = await supabase
               .from('current_portfolio')
               .select('scheme_name, folio, current_value')
               .eq('user_id', session.user.id);
-              if (error) {
-                console.error('[SUPABASE ERROR]', error);
-              } else {
-                portfolios = data || [];
-                //console.log('[DEBUG_ROSHAN] portfolios fetched:', portfolios);
-              }
-           // console.log('[DEBUG_ROSHAN] Portfolios:', portfolios.map(p => ({ scheme: p.scheme_name, folio: p.folio, value: p.current_value })));
+            portfolios = data || [];
+          }
+          let npsHoldings: any[] = [];
+          if (uniqueNpsIds.length > 0) {
+            const { data } = await supabase
+              .from('nps_holdings')
+              .select('id, fund_code, units')
+              .eq('user_id', session.user.id)
+              .in('id', uniqueNpsIds);
+            npsHoldings = data || [];
+          }
+          // Fetch all needed NAVs for NPS holdings
+          let npsNavs: any[] = [];
+          if (npsHoldings.length > 0) {
+            const fundCodes = Array.from(new Set(npsHoldings.map((h: any) => h.fund_code)));
+            if (fundCodes.length > 0) {
+              const { data } = await supabase
+                .from('nps_nav')
+                .select('fund_code, nav')
+                .in('fund_code', fundCodes);
+              npsNavs = data || [];
+            }
+          }
+          const npsNavMap: Record<string, number> = {};
+          for (const nav of npsNavs) {
+            npsNavMap[nav.fund_code] = parseFloat(nav.nav);
           }
           // 4. For each goal, fetch XIRR and mutual fund value using pre-fetched data
           const goalsWithDetails = await Promise.all(goalsData.map(async (goal, i): Promise<Goal> => {
@@ -173,23 +340,25 @@ export default function Dashboard() {
                     ((p.folio || '').trim().toLowerCase() === mappingFolio)
                 );
                 const mfValue = (portfolioData || []).reduce((sum: number, item: any) => sum + (parseFloat(item.current_value || '0') || 0), 0);
-                //console.log('[MF DEBUG]', { mapping, portfolioData, mfValue });
                 mutualFundValue += mfValue;
               } else if (mapping.source_type === 'stock' && mapping.source_id) {
                 // Use pre-fetched stocks
                 const stockData = stocks.find((s: any) => s.id === mapping.source_id);
                 if (stockData) {
-                  //console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] stockData:',i, stockData)
                   mappedStocks.push({
                     stock_code: stockData.stock_code,
                     quantity: stockData.quantity,
                     exchange: stockData.exchange,
                     source_id: stockData.id
                   })
-                 // console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] mapped stock:',i, mappedStocks)
                 }
-              } else if (mapping.source_type === 'nps') {
-                npsValue += 0
+              } else if (mapping.source_type === 'nps' && mapping.source_id) {
+                // Use pre-fetched npsHoldings and npsNavMap
+                const nps = npsHoldings.find((h: any) => h.id === mapping.source_id);
+                if (nps) {
+                  const nav = npsNavMap[nps.fund_code] || 0;
+                  npsValue += nav * (parseFloat(nps.units) || 0);
+                }
               }
             }
             return {
@@ -201,73 +370,32 @@ export default function Dashboard() {
               current_amount: mutualFundValue + npsValue // stock value will be added client-side
             }
           }))
-          setPortfolioSummary(summaryData)
-          setPortfolioLoading(false)
+          setStockSummary(summaryData)
           setGoals(goalsWithDetails)
           setGoalsLoading(false)
         } catch (err: any) {
-          setError(err.message)
         }
       }
     }
     checkAuth()
 
-    // Fetch NPS value
-    const fetchNpsValue = async () => {
-      setNpsLoading(true)
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session) return
-        // Fetch holdings
-        const { data: holdings, error: holdingsError } = await supabase
-          .from('nps_holdings')
-          .select('id, fund_code, units')
-          .eq('user_id', session.user.id)
-        if (holdingsError) throw holdingsError
-        // Fetch NAVs
-        const { data: navs, error: navsError } = await supabase
-          .from('nps_nav')
-          .select('fund_code, nav')
-        if (navsError) throw navsError
-        const navMap: Record<string, number> = {}
-        for (const row of navs || []) {
-          navMap[row.fund_code] = parseFloat(row.nav)
-        }
-        let total = 0
-        for (const h of holdings || []) {
-          const nav = navMap[h.fund_code] || 0
-          total += nav * (parseFloat(h.units) || 0)
-        }
-        setNpsValue(total)
-      } catch {
-        setNpsValue(null)
-      } finally {
-        setNpsLoading(false)
-      }
-    }
-    fetchNpsValue()
-
     // Fetch all unique mapped stock prices for all goals
     async function fetchAllMappedStockPrices() {
-    //  console.log('[DEBUG_ROSHAN] fetchAllMappedStockPrices called')
       // Collect all unique mapped stocks from goals
       const uniqueStocks: { symbol: string; exchange: string }[] = []
       const seen = new Set<string>()
       for (const goal of goals) {
         if (goal.mappedStocks) {
-          //console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] mapped stocks found for goal:', goal.id, goal.mappedStocks)
           for (const stock of goal.mappedStocks) {
             const key = `${stock.stock_code}|${stock.exchange}`
             console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] key:', key)
             if (!seen.has(key)) {
               seen.add(key)
               uniqueStocks.push({ symbol: stock.stock_code, exchange: stock.exchange })
-            //  console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] unique stock pushed:', stock.stock_code, stock.exchange)
             }
           }
         }
       }
-     // console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] unique stocks:', uniqueStocks)
       if (uniqueStocks.length === 0) {
         console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] no unique stocks found')
         setStockPrices({})
@@ -304,14 +432,9 @@ export default function Dashboard() {
           }
         } catch {}
       }
-     // console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] prices:', prices)
       setStockPrices(prices)
       return prices;
     }
-
- /*   if (goals.length > 0) {
-      fetchAllMappedStockPrices()
-    }*/
 
     const loadDashboardData = async (stockPricesOverride?: Record<string, number>) => {
       console.log('[DEBUG_ROSHAN] loadDashboardData called')
@@ -320,20 +443,16 @@ export default function Dashboard() {
         if (!session) return
         setStockLoading(true)
         console.log('[DEBUG_ROSHAN_LOAD_STOCK_SUMMARY] loading stock data')
-        const stockData = await loadStockSummary(session.user.id, stockPricesOverride || stockPrices)
+        const stockData = await getStockSummary(session.user.id, stockPricesOverride || stockPrices)
         console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] stockData:', stockData)
         setStockSummary(stockData)
         setStockLoading(false)
       } catch (err: any) {
-        setError(err.message)
         console.log('[DEBUG_ROSHAN] error in loadDashboardData:', err)
         setStockLoading(false)
       }
     }
   
-
-   // loadDashboardData() 
-
     const loadData = async () => {
       if (goals.length > 0) {
         console.log('[DEBUG_ROSHAN] goals found, fetching stock prices> Goal Length:', goals.length)
@@ -348,91 +467,6 @@ export default function Dashboard() {
     loadData()
 
   }, [mappedStocksKey])
-
-  const loadStockSummary = async (userId: string, existingStockPrices?: Record<string, number>): Promise<StockSummary> => {
-    try {
-      // Get all stocks for the user
-      const { data: stocks, error } = await supabase
-        .from('stocks')
-        .select('*')
-        .eq('user_id', userId)
-
-      if (error) {
-        console.error('Error loading stocks:', error)
-        return {
-          totalStocks: 0,
-          totalStockValue: 0,
-          totalInvested: 0,
-          totalReturn: 0,
-          totalReturnPercentage: 0
-        }
-      }
-
-      if (!stocks || stocks.length === 0) {
-        return {
-          totalStocks: 0,
-          totalStockValue: 0,
-          totalInvested: 0,
-          totalReturn: 0,
-          totalReturnPercentage: 0
-        }
-      }
-
-      let totalStockValue = 0
-      let totalInvested = 0
-
-      // Use existing prices when available, fetch only missing ones
-      for (const stock of stocks) {
-        const key = `${stock.stock_code}|${stock.exchange}`
-        let price = null
-        
-        // Check if we already have this price
-        if (existingStockPrices && existingStockPrices[key]) {
-          price = existingStockPrices[key]
-          console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] price exists for :', key, price)
-        } else {
-          // Only fetch if we don't have it
-          try {
-            console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] fetching price for :', key)
-            const response = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
-            if (response.ok) {
-              const priceData = await response.json()
-              if (priceData.success && priceData.price) {
-                price = priceData.price
-              }
-            }
-          } catch (err) {
-            console.error(`Error fetching price for ${stock.stock_code}:`, err)
-          }
-        }
-        
-        if (price) {
-          const currentValue = stock.quantity * price
-          totalStockValue += currentValue
-        }
-      }
-
-      const totalReturn = totalStockValue - totalInvested
-      const totalReturnPercentage = totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0
-
-      return {
-        totalStocks: stocks.length,
-        totalStockValue,
-        totalInvested,
-        totalReturn,
-        totalReturnPercentage
-      }
-    } catch (err) {
-      console.error('Error in loadStockSummary:', err)
-      return {
-        totalStocks: 0,
-        totalStockValue: 0,
-        totalInvested: 0,
-        totalReturn: 0,
-        totalReturnPercentage: 0
-      }
-    }
-  }
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
@@ -519,23 +553,6 @@ export default function Dashboard() {
     }
   }
 
-  const handleNavRefresh = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        // Refresh portfolio and stock data
-        const [summaryData, stockData] = await Promise.all([
-          getPortfolioSummary(session.user.id),
-          loadStockSummary(session.user.id, stockPrices)
-        ])
-        setPortfolioSummary(summaryData)
-        setStockSummary(stockData)
-      }
-    } catch (err: any) {
-      console.error('Error refreshing data:', err)
-    }
-  }
-
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -549,29 +566,24 @@ export default function Dashboard() {
     return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(2)}%`
   }
 
+  const handleNavRefresh = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        await refetchPortfolioSummary(); // Invalidate and refetch MF value
+        await refetchNpsValue(); // Invalidate and refetch NPS value
+      }
+    } catch (err: any) {
+      console.error('Error refreshing data:', err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading dashboard...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-600 text-xl mb-4">Error loading dashboard</div>
-          <p className="text-gray-600">{error}</p>
-          <button 
-            onClick={() => window.location.reload()}
-            className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            Retry
-          </button>
         </div>
       </div>
     )
@@ -703,7 +715,7 @@ export default function Dashboard() {
                 <div className="ml-4 flex-1">
                   <p className="text-sm font-medium text-gray-600">NPS Value</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {npsLoading ? '...' : (npsValue !== null ? formatCurrency(npsValue) : '-')}
+                    {npsLoading ? '...' : (typeof npsValue === 'number' ? formatCurrency(npsValue) : '-')}
                   </p>
                 </div>
               </div>

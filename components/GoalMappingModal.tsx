@@ -51,6 +51,9 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   const [activeTab, setActiveTab] = useState<'mutual_funds' | 'stocks' | 'nps'>('mutual_funds')
   const [allGoalMappings, setAllGoalMappings] = useState<GoalMapping[]>([])
   const [selectedStockIds, setSelectedStockIds] = useState<string[]>([])
+  const [availableNpsHoldings, setAvailableNpsHoldings] = useState<any[]>([])
+  const [selectedNpsIds, setSelectedNpsIds] = useState<string[]>([])
+  const [npsMappingsChanged, setNpsMappingsChanged] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -65,17 +68,22 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         return
       }
 
-      const [schemes, mappings, stocks, allGoalMappings] = await Promise.all([
+      const [schemes, mappings, stocks, allGoalMappings, npsHoldings] = await Promise.all([
         getAvailableSchemes(session.user.id),
         getGoalMappings(goal.id),
         loadStocks(session.user.id),
-        loadAllGoalMappings(session.user.id)
+        loadAllGoalMappings(session.user.id),
+        loadNpsHoldings(session.user.id)
       ])
 
       setAvailableSchemes(schemes)
       setCurrentMappings(mappings)
       setAvailableStocks(stocks)
       setAllGoalMappings(allGoalMappings)
+      const mappedNpsIds = new Set(
+        (allGoalMappings as any[]).filter((m: any) => m.source_type === 'nps' && m.source_id).map((m: any) => m.source_id)
+      )
+      setAvailableNpsHoldings(npsHoldings.filter((h: any) => !mappedNpsIds.has(h.id)))
     } catch (err: any) {
       setError(err.message || 'Error loading data')
     } finally {
@@ -117,6 +125,23 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       .in('goal_id', goalIds)
     if (mappingsError) return []
     return mappings || []
+  }
+
+  const loadNpsHoldings = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('nps_holdings')
+        .select('*, nps_funds(fund_name)')
+        .eq('user_id', userId)
+      if (error) {
+        console.error('Error loading NPS holdings:', error)
+        return []
+      }
+      return data || []
+    } catch (err) {
+      console.error('Error loading NPS holdings:', err)
+      return []
+    }
   }
 
   const addMapping = async (schemeName: string, folio: string, sourceType: 'mutual_fund' | 'stock' | 'nps', sourceId?: string) => {
@@ -238,6 +263,39 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
     }
   }
 
+  const handleNpsCheckbox = (npsId: string) => {
+    setSelectedNpsIds(prev =>
+      prev.includes(npsId)
+        ? prev.filter(id => id !== npsId)
+        : [...prev, npsId]
+    )
+  }
+
+  const handleAddSelectedNps = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      for (const npsId of selectedNpsIds) {
+        const nps = availableNpsHoldings.find((h: any) => h.id === npsId)
+        if (nps) {
+          await addMapping(
+            nps.nps_funds?.fund_name || nps.fund_code,
+            '',
+            'nps',
+            nps.id
+          )
+          setNpsMappingsChanged(true)
+        }
+      }
+      setSelectedNpsIds([])
+      await loadData()
+    } catch (err: any) {
+      setError(err.message || 'Error adding NPS holdings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -278,6 +336,13 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
     )
   }
 
+  const handleClose = () => {
+    if (npsMappingsChanged) {
+      onMappingUpdated()
+    }
+    onClose()
+  }
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -300,7 +365,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
             <p className="text-sm text-gray-600 mt-1">{goal.name}</p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-gray-600"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,9 +533,39 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
             )}
 
             {activeTab === 'nps' && (
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <p className="text-gray-600">NPS integration coming soon.</p>
-                <p className="text-sm text-gray-500 mt-1">You'll be able to map NPS holdings to goals.</p>
+              <div className="space-y-3">
+                {availableNpsHoldings.length === 0 ? (
+                  <div className="bg-gray-50 rounded-lg p-4 text-center">
+                    <p className="text-gray-600">All NPS holdings are already mapped to a goal.</p>
+                  </div>
+                ) : (
+                  <>
+                    {availableNpsHoldings.map((nps: any) => (
+                      <div key={nps.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedNpsIds.includes(nps.id)}
+                            onChange={() => handleNpsCheckbox(nps.id)}
+                            className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            disabled={saving}
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{nps.nps_funds?.fund_name || nps.fund_code}</p>
+                            <p className="text-sm text-gray-600">{nps.fund_code} • {nps.units} units</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={handleAddSelectedNps}
+                      disabled={saving || selectedNpsIds.length === 0}
+                      className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Add Selected
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -14,13 +14,15 @@ interface AllocationPieProps {
   title?: string
   width?: number
   height?: number
+  legendPosition?: 'bottom' | 'right'
 }
 
 export default function AllocationPie({ 
   data, 
   title = "Asset Allocation", 
   width = 300, 
-  height = 300 
+  height = 300,
+  legendPosition = 'bottom'
 }: AllocationPieProps) {
   if (!data || data.length === 0) {
     return (
@@ -133,42 +135,75 @@ export default function AllocationPie({
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
-      
-      <div className="flex flex-col items-center">
-        <svg width={width} height={height} className="mb-4">
-          {paths}
-          {labels}
-        </svg>
-
-        {/* Legend */}
-        <div className="w-full max-w-xs">
-          <div className="space-y-2">
-            {data.map((item, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div 
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{ backgroundColor: item.color }}
-                  ></div>
-                  <span className="text-sm text-gray-700">{item.category}</span>
+      {legendPosition === 'right' ? (
+        <div className="flex flex-row items-center justify-center">
+          <svg width={width} height={height} className="mr-8">
+            {paths}
+            {labels}
+          </svg>
+          {/* Legend */}
+          <div className="w-full max-w-xs">
+            <div className="space-y-2">
+              {data.map((item, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div 
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{ backgroundColor: item.color }}
+                    ></div>
+                    <span className="text-sm text-gray-700">{item.category}</span>
+                  </div>
+                  <div className="text-sm font-medium text-gray-900">
+                    ₹{item.value.toLocaleString()}
+                  </div>
                 </div>
-                <div className="text-sm font-medium text-gray-900">
-                  ₹{item.value.toLocaleString()}
-                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Total</span>
+                <span className="text-sm font-bold text-gray-900">
+                  ₹{total.toLocaleString()}
+                </span>
               </div>
-            ))}
-          </div>
-          
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Total</span>
-              <span className="text-sm font-bold text-gray-900">
-                ₹{total.toLocaleString()}
-              </span>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col items-center">
+          <svg width={width} height={height} className="mb-4">
+            {paths}
+            {labels}
+          </svg>
+          {/* Legend */}
+          <div className="w-full max-w-xs">
+            <div className="space-y-2">
+              {data.map((item, index) => (
+                <div key={index} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div 
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{ backgroundColor: item.color }}
+                    ></div>
+                    <span className="text-sm text-gray-700">{item.category}</span>
+                  </div>
+                  <div className="text-sm font-medium text-gray-900">
+                    ₹{item.value.toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Total</span>
+                <span className="text-sm font-bold text-gray-900">
+                  ₹{total.toLocaleString()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
