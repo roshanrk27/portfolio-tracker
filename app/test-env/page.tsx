@@ -7,29 +7,29 @@ import { calculateSchemeXIRR } from '@/lib/xirr'
 import { categorizeScheme } from '@/lib/assetAllocation'
 
 export default function TestEnv() {
-  const [portfolioXIRR, setPortfolioXIRR] = useState<any>(null)
-  const [schemeXIRRs, setSchemeXIRRs] = useState<any[]>([])
-  const [goalXIRR, setGoalXIRR] = useState<any>(null)
+  const [portfolioXIRR, setPortfolioXIRR] = useState<unknown>(null)
+  const [schemeXIRRs, setSchemeXIRRs] = useState<Record<string, unknown>[]>([])
+  const [goalXIRR, setGoalXIRR] = useState<unknown>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [folioSchemes, setFolioSchemes] = useState<any[]>([])
+  const [folioSchemes, setFolioSchemes] = useState<Record<string, unknown>[]>([])
   const [selectedFolio, setSelectedFolio] = useState('')
   const [selectedScheme, setSelectedScheme] = useState('')
-  const [schemeTxs, setSchemeTxs] = useState<any[]>([])
+  const [schemeTxs, setSchemeTxs] = useState<Record<string, unknown>[]>([])
   const [schemeCurrentValue, setSchemeCurrentValue] = useState<number>(0)
-  const [schemeXirrDebug, setSchemeXirrDebug] = useState<any>(null)
+  const [schemeXirrDebug, setSchemeXirrDebug] = useState<unknown>(null)
   
   // Goal debug state
-  const [goals, setGoals] = useState<any[]>([])
+  const [goals, setGoals] = useState<Record<string, unknown>[]>([])
   const [selectedGoal, setSelectedGoal] = useState('')
-  const [goalTxs, setGoalTxs] = useState<any[]>([])
+  const [goalTxs, setGoalTxs] = useState<Record<string, unknown>[]>([])
   const [goalCurrentValue, setGoalCurrentValue] = useState<number>(0)
-  const [goalXirrDebug, setGoalXirrDebug] = useState<any>(null)
+  const [goalXirrDebug, setGoalXirrDebug] = useState<unknown>(null)
   
   // Portfolio debug state
-  const [portfolioTxs, setPortfolioTxs] = useState<any[]>([])
+  const [portfolioTxs, setPortfolioTxs] = useState<Record<string, unknown>[]>([])
   const [portfolioCurrentValue, setPortfolioCurrentValue] = useState<number>(0)
-  const [portfolioXirrDebug, setPortfolioXirrDebug] = useState<any>(null)
+  const [portfolioXirrDebug, setPortfolioXirrDebug] = useState<unknown>(null)
 
   const [schemeNames, setSchemeNames] = useState<string[]>([])
 
@@ -45,8 +45,9 @@ export default function TestEnv() {
 
       const result = await getPortfolioXIRR(session.user.id)
       setPortfolioXIRR(result)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -64,8 +65,9 @@ export default function TestEnv() {
 
       const result = await getSchemeXIRRs(session.user.id)
       setSchemeXIRRs(result)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -94,8 +96,9 @@ export default function TestEnv() {
       } else {
         setError('No goals found for testing')
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -154,7 +157,7 @@ export default function TestEnv() {
       .single()
     setSchemeCurrentValue(cp?.current_value ? parseFloat(cp.current_value) : 0)
     // Prepare cash flows for XIRR with proper categorization
-    const cashFlows = (txs || []).map(tx => {
+    const cashFlows = (txs || []).map((tx: Record<string, unknown>) => {
       const transactionType = tx.transaction_type.toLowerCase()
       
       // Negative cash flows (money going out)
@@ -182,7 +185,7 @@ export default function TestEnv() {
     })
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      (txs || []).map(tx => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      (txs || []).map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
       cp?.current_value ? parseFloat(cp.current_value) : 0
     )
     setSchemeXirrDebug({ cashFlows, xirrResult })
@@ -208,7 +211,7 @@ export default function TestEnv() {
     }
     
     // Collect all transactions for mapped schemes
-    const allTxs: any[] = []
+    const allTxs: Record<string, unknown>[] = []
     let totalCurrentValue = 0
     
     for (const mapping of mappings) {
@@ -240,7 +243,7 @@ export default function TestEnv() {
     setGoalCurrentValue(totalCurrentValue)
     
     // Prepare cash flows for XIRR
-    const cashFlows = allTxs.map((tx: any) => {
+    const cashFlows = allTxs.map((tx: Record<string, unknown>) => {
       const transactionType = tx.transaction_type.toLowerCase()
       
       let amount: number
@@ -287,7 +290,7 @@ export default function TestEnv() {
     
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      allTxs.map((tx: any) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      allTxs.map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
       totalCurrentValue
     )
     
@@ -314,13 +317,13 @@ export default function TestEnv() {
       .select('current_value')
       .eq('user_id', session.user.id)
     
-    const totalCurrentValue = portfolio?.reduce((sum, p) => sum + parseFloat(p.current_value || '0'), 0) || 0
+    const totalCurrentValue = portfolio?.reduce((sum: number, p: Record<string, unknown>) => sum + parseFloat(p.current_value || '0'), 0) || 0
     
     setPortfolioTxs(txs || [])
     setPortfolioCurrentValue(totalCurrentValue)
     
     // Prepare cash flows for XIRR
-    const cashFlows = (txs || []).map((tx: any) => {
+    const cashFlows = (txs || []).map((tx: Record<string, unknown>) => {
       const transactionType = tx.transaction_type.toLowerCase()
       const isNegative = ['purchase', 'investment', 'dividend', 'switch in', 'shift in'].some(type => 
         transactionType.includes(type)
@@ -345,7 +348,7 @@ export default function TestEnv() {
     
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      (txs || []).map((tx: any) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      (txs || []).map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
       totalCurrentValue
     )
     
@@ -361,8 +364,8 @@ export default function TestEnv() {
       .select('scheme_name')
       .eq('user_id', session.user.id)
     
-    const uniqueNames = [...new Set((data?.map((item: { scheme_name: string }) => item.scheme_name) || []))]
-    setSchemeNames(uniqueNames.sort())
+
+    setSchemeNames((data || []).map((d: Record<string, unknown>) => d.scheme_name as string))
   }
 
   return (
@@ -444,7 +447,7 @@ export default function TestEnv() {
               disabled={!selectedFolio}
             >
               <option value="">Select Scheme</option>
-              {folioSchemes.filter(fs => fs.folio === selectedFolio).map((fs: any) => (
+              {folioSchemes.filter(fs => fs.folio === selectedFolio).map((fs: Record<string, unknown>) => (
                 <option key={fs.scheme_name} value={fs.scheme_name}>{fs.scheme_name}</option>
               ))}
             </select>
@@ -469,7 +472,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {schemeTxs.map((tx: any, i: number) => (
+                  {schemeTxs.map((tx: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -482,7 +485,7 @@ export default function TestEnv() {
               <div className="mb-2">Current Value: <span className="font-semibold text-gray-900">₹{schemeCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {schemeXirrDebug && (
+          {schemeXirrDebug && typeof schemeXirrDebug === 'object' && 'cashFlows' in schemeXirrDebug && Array.isArray((schemeXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">XIRR Cash Flows</h3>
               <table className="min-w-full text-sm mb-2">
@@ -494,7 +497,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {schemeXirrDebug.cashFlows.map((cf: any, i: number) => (
+                  {(schemeXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.map((cf: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>
@@ -503,10 +506,14 @@ export default function TestEnv() {
                   ))}
                 </tbody>
               </table>
-              <div className="mb-2 text-gray-900">XIRR: <span className="font-semibold text-gray-900">{schemeXirrDebug.xirrResult.xirr ? (schemeXirrDebug.xirrResult.xirr * 100).toFixed(2) + '%' : '0.00%'}</span></div>
-              <div className="mb-2 text-gray-900">Converged: <span className="font-semibold text-gray-900">{schemeXirrDebug.xirrResult.converged ? 'Yes' : 'No'}</span></div>
-              {schemeXirrDebug.xirrResult.error && (
-                <div className="text-red-600">Error: {schemeXirrDebug.xirrResult.error}</div>
+              {schemeXirrDebug && typeof schemeXirrDebug === 'object' && 'xirrResult' in schemeXirrDebug && (
+                <div className="mb-2 text-gray-900">XIRR: <span className="font-semibold text-gray-900">{((schemeXirrDebug as { xirrResult: { xirr: number } })?.xirrResult?.xirr * 100).toFixed(2) + '%'}</span></div>
+              )}
+              {schemeXirrDebug && typeof schemeXirrDebug === 'object' && 'xirrResult' in schemeXirrDebug && ((schemeXirrDebug as { xirrResult: { converged: boolean } })?.xirrResult?.converged) && (
+                <div className="text-green-600">Converged: Yes</div>
+              )}
+              {schemeXirrDebug && typeof schemeXirrDebug === 'object' && 'xirrResult' in schemeXirrDebug && ((schemeXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error) && (
+                <div className="text-red-600">Error: {((schemeXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error)}</div>
               )}
             </div>
           )}
@@ -522,7 +529,7 @@ export default function TestEnv() {
               onChange={e => setSelectedGoal(e.target.value)}
             >
               <option value="">Select Goal</option>
-              {goals.map((goal: any) => (
+              {goals.map((goal: Record<string, unknown>) => (
                 <option key={goal.id} value={goal.id}>{goal.name}</option>
               ))}
             </select>
@@ -547,7 +554,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {goalTxs.map((tx: any, i: number) => (
+                  {goalTxs.map((tx: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -560,7 +567,7 @@ export default function TestEnv() {
               <div className="mb-2 text-gray-900">Total Current Value: <span className="font-semibold text-gray-900">₹{goalCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {goalXirrDebug && (
+          {goalXirrDebug && typeof goalXirrDebug === 'object' && 'cashFlows' in goalXirrDebug && Array.isArray((goalXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">Goal XIRR Cash Flows</h3>
               <table className="min-w-full text-sm mb-2">
@@ -572,7 +579,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {goalXirrDebug.cashFlows.map((cf: any, i: number) => (
+                  {(goalXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.map((cf: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>
@@ -581,10 +588,14 @@ export default function TestEnv() {
                   ))}
                 </tbody>
               </table>
-              <div className="mb-2 text-gray-900">Goal XIRR: <span className="font-semibold text-gray-900">{goalXirrDebug.xirrResult.xirr ? (goalXirrDebug.xirrResult.xirr * 100).toFixed(2) + '%' : '0.00%'}</span></div>
-              <div className="mb-2 text-gray-900">Converged: <span className="font-semibold text-gray-900">{goalXirrDebug.xirrResult.converged ? 'Yes' : 'No'}</span></div>
-              {goalXirrDebug.xirrResult.error && (
-                <div className="text-red-600">Error: {goalXirrDebug.xirrResult.error}</div>
+              {goalXirrDebug && typeof goalXirrDebug === 'object' && 'xirrResult' in goalXirrDebug && (
+                <div className="mb-2 text-gray-900">Goal XIRR: <span className="font-semibold text-gray-900">{((goalXirrDebug as { xirrResult: { xirr: number } })?.xirrResult?.xirr * 100).toFixed(2) + '%'}</span></div>
+              )}
+              {goalXirrDebug && typeof goalXirrDebug === 'object' && ((goalXirrDebug as { xirrResult: { converged: boolean } })?.xirrResult?.converged) && (
+                <div className="text-green-600">Converged: Yes</div>
+              )}
+              {goalXirrDebug && typeof goalXirrDebug === 'object' && ((goalXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error) && (
+                <div className="text-red-600">Error: {((goalXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error)}</div>
               )}
             </div>
           )}
@@ -615,7 +626,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolioTxs.slice(0, 20).map((tx: any, i: number) => (
+                  {portfolioTxs.slice(0, 20).map((tx: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -628,10 +639,10 @@ export default function TestEnv() {
               <div className="mb-2 text-gray-900">Total Current Value: <span className="font-semibold text-gray-900">₹{portfolioCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {portfolioXirrDebug && (
+          {portfolioXirrDebug && typeof portfolioXirrDebug === 'object' && 'cashFlows' in portfolioXirrDebug && Array.isArray((portfolioXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">Portfolio XIRR Cash Flows</h3>
-              <div className="text-sm text-gray-700 mb-2">Showing first 20 cash flows (total: {portfolioXirrDebug.cashFlows.length})</div>
+              <div className="text-sm text-gray-700 mb-2">Showing first 20 cash flows (total: {((portfolioXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.length) || 0})</div>
               <table className="min-w-full text-sm mb-2">
                 <thead>
                   <tr className="bg-gray-100">
@@ -641,7 +652,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolioXirrDebug.cashFlows.slice(0, 20).map((cf: any, i: number) => (
+                  {(portfolioXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.slice(0, 20).map((cf: Record<string, unknown>, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>
@@ -650,41 +661,45 @@ export default function TestEnv() {
                   ))}
                 </tbody>
               </table>
-              <div className="mb-2 text-gray-900">Portfolio XIRR: <span className="font-semibold text-gray-900">{portfolioXirrDebug.xirrResult.xirr ? (portfolioXirrDebug.xirrResult.xirr * 100).toFixed(2) + '%' : '0.00%'}</span></div>
-              <div className="mb-2 text-gray-900">Converged: <span className="font-semibold text-gray-900">{portfolioXirrDebug.xirrResult.converged ? 'Yes' : 'No'}</span></div>
-              {portfolioXirrDebug.xirrResult.error && (
-                <div className="text-red-600">Error: {portfolioXirrDebug.xirrResult.error}</div>
+              {portfolioXirrDebug && typeof portfolioXirrDebug === 'object' && 'xirrResult' in portfolioXirrDebug && (
+                <div className="mb-2 text-gray-900">Portfolio XIRR: <span className="font-semibold text-gray-900">{((portfolioXirrDebug as { xirrResult: { xirr: number } })?.xirrResult?.xirr * 100).toFixed(2) + '%'}</span></div>
+              )}
+              {portfolioXirrDebug && typeof portfolioXirrDebug === 'object' && ((portfolioXirrDebug as { xirrResult: { converged: boolean } })?.xirrResult?.converged) && (
+                <div className="text-green-600">Converged: Yes</div>
+              )}
+              {portfolioXirrDebug && typeof portfolioXirrDebug === 'object' && ((portfolioXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error) && (
+                <div className="text-red-600">Error: {((portfolioXirrDebug as { xirrResult: { error: string } })?.xirrResult?.error)}</div>
               )}
             </div>
           )}
         </div>
 
         {/* Portfolio XIRR Results */}
-        {portfolioXIRR && (
+        {portfolioXIRR && typeof portfolioXIRR === 'object' && 'xirr' in portfolioXIRR && (
           <div className="bg-white rounded-lg shadow p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Portfolio XIRR Results</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-sm font-medium text-gray-700">XIRR Rate</p>
-                <p className="text-lg font-semibold text-gray-900">{portfolioXIRR.xirr?.toFixed(6)}</p>
+                <p className="text-lg font-semibold text-gray-900">{(portfolioXIRR as { xirr: number }).xirr?.toFixed(6)}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-700">XIRR Percentage</p>
-                <p className={`text-lg font-semibold ${portfolioXIRR.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {portfolioXIRR.formattedXIRR}
+                <p className={`text-lg font-semibold ${(portfolioXIRR as { xirrPercentage: number }).xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {(portfolioXIRR as { formattedXIRR: string }).formattedXIRR}
                 </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-700">Converged</p>
-                <p className="text-lg font-semibold text-gray-900">{portfolioXIRR.converged ? 'Yes' : 'No'}</p>
+                <p className="text-lg font-semibold text-gray-900">{(portfolioXIRR as { converged: boolean }).converged ? 'Yes' : 'No'}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-700">Current Value</p>
-                <p className="text-lg font-semibold text-gray-900">₹{portfolioXIRR.totalCurrentValue?.toLocaleString()}</p>
+                <p className="text-lg font-semibold text-gray-900">₹{(portfolioXIRR as { totalCurrentValue: number }).totalCurrentValue?.toLocaleString()}</p>
               </div>
             </div>
-            {portfolioXIRR.error && (
-              <p className="text-sm text-red-600 mt-2">Error: {portfolioXIRR.error}</p>
+            {(portfolioXIRR as { error?: string }).error && (
+              <p className="text-sm text-red-600 mt-2">Error: {(portfolioXIRR as { error: string }).error}</p>
             )}
           </div>
         )}

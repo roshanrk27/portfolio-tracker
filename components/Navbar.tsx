@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
 
 export default function Navbar() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<{ email?: string } | null>(null)
   const router = useRouter()
 
   useEffect(() => {

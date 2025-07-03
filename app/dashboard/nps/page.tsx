@@ -4,6 +4,25 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 
+interface NpsFund {
+  id: string;
+  fund_name: string;
+  fund_code: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface NpsHolding {
+  id: string;
+  user_id: string;
+  fund_code: string;
+  units: number | string;
+  as_of_date: string;
+  created_at?: string;
+  updated_at?: string;
+  nps_funds?: { fund_name: string };
+}
+
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -13,23 +32,32 @@ function formatCurrency(amount: number) {
   }).format(amount)
 }
 
+function isNpsFund(fund: unknown): fund is NpsFund {
+  return (
+    typeof fund === 'object' &&
+    fund !== null &&
+    'fund_code' in fund &&
+    'fund_name' in fund &&
+    typeof (fund as { fund_code: unknown }).fund_code === 'string' &&
+    typeof (fund as { fund_name: unknown }).fund_name === 'string'
+  );
+}
+
 export default function NPSDashboard() {
   const [loading, setLoading] = useState(true)
-  const [funds, setFunds] = useState<any[]>([])
-  const [holdings, setHoldings] = useState<any[]>([])
+  const [funds, setFunds] = useState<NpsFund[]>([])
+  const [holdings, setHoldings] = useState<NpsHolding[]>([])
   const [navMap, setNavMap] = useState<Record<string, { nav: number, nav_date?: string }>>({})
   const [search, setSearch] = useState('')
-  const [selectedFund, setSelectedFund] = useState<any>(null)
+  const [selectedFund, setSelectedFund] = useState<NpsFund | null>(null)
   const [units, setUnits] = useState('')
   const [asOfDate, setAsOfDate] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [formLoading, setFormLoading] = useState(false)
-  const [fetchError, setFetchError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [navRefreshLoading, setNavRefreshLoading] = useState(false)
-  const [navRefreshLogs, setNavRefreshLogs] = useState<string[] | null>(null)
-  const [editModal, setEditModal] = useState<{ open: boolean, holding: any } | null>(null)
+  const [editModal, setEditModal] = useState<{ open: boolean, holding: NpsHolding } | null>(null)
   const [editUnits, setEditUnits] = useState('')
   const [editDate, setEditDate] = useState('')
   const [editLoading, setEditLoading] = useState(false)
@@ -46,7 +74,6 @@ export default function NPSDashboard() {
       }
       try {
         setLoading(true)
-        setFetchError(null)
         // Check admin
         const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
@@ -78,8 +105,8 @@ export default function NPSDashboard() {
           navMap[row.fund_code] = { nav: parseFloat(row.nav), nav_date: row.nav_date }
         }
         setNavMap(navMap)
-      } catch (err: any) {
-        setFetchError(err.message)
+      } catch (err: unknown) {
+        console.error('Error fetching data:', err)
       } finally {
         setLoading(false)
       }
@@ -89,8 +116,8 @@ export default function NPSDashboard() {
 
   // Funds not already in holdings
   const heldFundCodes = new Set(holdings.map(h => h.fund_code))
-  const availableFunds = funds.filter(f => !heldFundCodes.has(f.fund_code))
-  const filteredFunds = availableFunds.filter(f =>
+  const availableFunds: NpsFund[] = funds.filter(f => !heldFundCodes.has(f.fund_code))
+  const filteredFunds: NpsFund[] = availableFunds.filter(f =>
     f.fund_name.toLowerCase().includes(search.toLowerCase()) ||
     f.fund_code.toLowerCase().includes(search.toLowerCase())
   )
@@ -147,8 +174,9 @@ export default function NPSDashboard() {
       setAsOfDate('')
       setSearch('')
       setShowModal(false)
-    } catch (err: any) {
-      setFormError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setFormError(errorMessage)
     } finally {
       setFormLoading(false)
     }
@@ -157,7 +185,6 @@ export default function NPSDashboard() {
   // NAV refresh handler
   const handleNavRefresh = async () => {
     setNavRefreshLoading(true)
-    setNavRefreshLogs(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const resp = await fetch('/api/refresh-nps-nav', {
@@ -167,9 +194,9 @@ export default function NPSDashboard() {
         }
       })
       const result = await resp.json()
-      setNavRefreshLogs(result.logs || ['No logs'])
-    } catch (err: any) {
-      setNavRefreshLogs(['Error: ' + err.message])
+      console.log('NAV refresh result:', result.logs || ['No logs'])
+    } catch (err: unknown) {
+      console.error('NAV refresh error:', err)
     } finally {
       setNavRefreshLoading(false)
     }
@@ -179,15 +206,15 @@ export default function NPSDashboard() {
   const holdingsWithValue = holdings.map(h => {
     const nav = navMap[h.fund_code]?.nav || 0
     const nav_date = navMap[h.fund_code]?.nav_date || ''
-    const current_value = nav * (parseFloat(h.units) || 0)
+    const current_value = nav * (parseFloat(h.units.toString()) || 0)
     return { ...h, nav, nav_date, current_value }
   })
   const totalNpsValue = holdingsWithValue.reduce((sum, h) => sum + h.current_value, 0)
 
   // Open edit modal
-  const openEditModal = (holding: any) => {
+  const openEditModal = (holding: NpsHolding) => {
     setEditModal({ open: true, holding })
-    setEditUnits(holding.units)
+    setEditUnits(holding.units.toString())
     setEditDate(holding.as_of_date)
     setEditError(null)
   }
@@ -213,7 +240,6 @@ export default function NPSDashboard() {
       closeEditModal()
       // Re-run the fetch logic
       setLoading(true)
-      setFetchError(null)
       try {
         // Fetch all funds
         const { data: fundsData, error: fundsError } = await supabase
@@ -239,13 +265,15 @@ export default function NPSDashboard() {
           navMap[row.fund_code] = { nav: parseFloat(row.nav), nav_date: row.nav_date }
         }
         setNavMap(navMap)
-      } catch (err: any) {
-        setFetchError(err.message)
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        console.error('Error refreshing data:', errorMessage)
       } finally {
         setLoading(false)
       }
-    } catch (err: any) {
-      setEditError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setEditError(errorMessage)
     } finally {
       setEditLoading(false)
     }
@@ -386,19 +414,15 @@ export default function NPSDashboard() {
                   />
                   {!selectedFund && (
                     <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
-                      {filteredFunds.length === 0 ? (
-                        <div className="p-2 text-gray-400 text-sm">No funds found</div>
-                      ) : (
-                        filteredFunds.map(fund => (
-                          <div
-                            key={fund.fund_code}
-                            className={`p-2 cursor-pointer hover:bg-blue-100 ${selectedFund?.fund_code === fund.fund_code ? 'bg-blue-200' : ''}`}
-                            onClick={() => setSelectedFund(fund)}
-                          >
-                            <span className="font-bold text-gray-900">{fund.fund_name}</span> <span className="text-xs font-mono text-blue-800 bg-blue-50 rounded px-1 ml-2">{fund.fund_code}</span>
-                          </div>
-                        ))
-                      )}
+                      {filteredFunds.map(fund => (
+                        <div
+                          key={fund.fund_code}
+                          className={`p-2 cursor-pointer hover:bg-blue-100 ${selectedFund?.fund_code === fund.fund_code ? 'bg-blue-200' : ''}`}
+                          onClick={() => setSelectedFund(fund)}
+                        >
+                          <span className="font-bold text-gray-900">{fund.fund_name}</span> <span className="text-xs font-mono text-blue-800 bg-blue-50 rounded px-1 ml-2">{fund.fund_code}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                   {selectedFund && (

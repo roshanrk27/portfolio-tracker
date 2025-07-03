@@ -14,19 +14,25 @@ export async function fetchStocksWithPrices() {
     .order('created_at', { ascending: false });
   if (error) throw error;
   if (!data || data.length === 0) return [];
-  const validStocks = data.filter((stock: any) =>
+  const validStocks = data.filter((stock: Record<string, unknown>) =>
     typeof stock.stock_code === 'string' && stock.stock_code.trim() !== '' &&
     typeof stock.exchange === 'string' && stock.exchange.trim() !== ''
   );
-  const symbols = validStocks.map((stock: any) => stock.stock_code);
-  const exchanges = validStocks.map((stock: any) => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange);
+  const symbols = validStocks.map((stock: Record<string, unknown>) => 
+    typeof stock.stock_code === 'string' ? stock.stock_code : ''
+  );
+  const exchanges = validStocks.map((stock: Record<string, unknown>) => 
+    typeof stock.exchange === 'string' ? (stock.exchange === 'US' ? 'NASDAQ' : stock.exchange) : ''
+  );
   const pricesResponse = await fetchStockPrices(symbols, exchanges);
   if (pricesResponse && pricesResponse.success) {
-    return data.map((stock: any) => {
-      if (!symbols.includes(stock.stock_code)) return stock;
-      const priceData = pricesResponse.prices[stock.stock_code];
+    return data.map((stock: Record<string, unknown>) => {
+      const stockCode = typeof stock.stock_code === 'string' ? stock.stock_code : '';
+      if (!symbols.includes(stockCode)) return stock;
+      const priceData = pricesResponse.prices[stockCode];
       if (priceData && priceData.price !== null) {
-        const currentValue = calculateStockValue(stock.quantity, priceData.price);
+        const quantity = typeof stock.quantity === 'number' ? stock.quantity : 0;
+        const currentValue = calculateStockValue(quantity, priceData.price);
         return {
           ...stock,
           currentPrice: priceData.price,

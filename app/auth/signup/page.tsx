@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
 export default function SignupPage() {
@@ -12,7 +11,6 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [isClient, setIsClient] = useState(false)
-  const router = useRouter()
 
   useEffect(() => {
     setIsClient(true)
@@ -37,7 +35,7 @@ export default function SignupPage() {
       } else {
         setMessage('Check your email for the confirmation link!')
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)

@@ -3,10 +3,18 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
+interface UploadResult {
+  message: string
+  data: Array<{
+    fund_name: string
+    fund_code: string
+  }>
+}
+
 export default function NPSFundsPage() {
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<UploadResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isAdmin, setIsAdmin] = useState(false)
 
@@ -14,6 +22,7 @@ export default function NPSFundsPage() {
     // Check if user is admin
     const checkAdminStatus = async () => {
       try {
+        if (!supabase) return
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
           const { data: profile, error: profileError } = await supabase
@@ -36,9 +45,10 @@ export default function NPSFundsPage() {
         } else {
           setError('No active session found')
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred'
         console.error('Exception in checkAdminStatus:', err)
-        setError(`Exception checking admin status: ${err.message}`)
+        setError(`Exception checking admin status: ${errorMessage}`)
       }
     }
     checkAdminStatus()
@@ -92,6 +102,9 @@ export default function NPSFundsPage() {
       }
 
       // Upsert data with fund_code as unique constraint
+      if (!supabase) {
+        throw new Error('Supabase client not available')
+      }
       const { data, error } = await supabase
         .from('nps_funds')
         .upsert(fundsData, { 
@@ -110,9 +123,10 @@ export default function NPSFundsPage() {
         data: fundsData
       })
       
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred'
       console.error('Upload error:', err)
-      setError(err.message)
+      setError(errorMessage)
     } finally {
       setIsUploading(false)
     }
@@ -163,7 +177,7 @@ export default function NPSFundsPage() {
               CSV format: fund_name, fund_code
             </p>
             <p className="mt-1 text-sm text-gray-400">
-              New entries will be added only if the fund_code doesn't already exist
+              New entries will be added only if the fund_code doesn&apos;t already exist
             </p>
           </div>
           
@@ -191,7 +205,7 @@ export default function NPSFundsPage() {
           <ul className="list-disc list-inside space-y-3 text-gray-700 text-lg">
             <li className="font-medium">Upload CSV with fund_name and fund_code columns</li>
             <li className="font-medium">Fund codes are used as unique identifiers</li>
-            <li className="font-medium">New entries are added only if fund_code doesn't exist</li>
+            <li className="font-medium">New entries are added only if fund_code doesn&apos;t exist</li>
             <li className="font-medium">Existing entries with same fund_code are updated</li>
             <li className="font-medium">This mapping is used in the NPS holdings page</li>
           </ul>

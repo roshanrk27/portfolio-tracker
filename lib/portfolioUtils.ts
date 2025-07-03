@@ -245,9 +245,10 @@ export async function refreshPortfolioNav(userId: string) {
     }
 
     return { success: true, updated: updatedCount }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in refreshPortfolioNav:', error)
-    return { success: false, error: error.message }
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return { success: false, error: errorMessage }
   }
 }
 
@@ -394,7 +395,7 @@ export async function getAvailableSchemes(userId: string) {
         acc.push(item)
       }
       return acc
-    }, [] as any[]) || []
+    }, [] as Array<{ scheme_name: string; folio: string }>) || []
 
     return uniqueSchemes
   } catch (error) {
@@ -583,7 +584,7 @@ export async function getGoalXIRR(goalId: string) {
     }
 
     // Collect transactions and current values for mapped schemes
-    const schemeTransactions: Record<string, any[]> = {}
+    const goalSchemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
     const schemeCurrentValues: Record<string, number> = {}
 
     for (const mapping of mappings) {
@@ -598,7 +599,7 @@ export async function getGoalXIRR(goalId: string) {
         .eq('folio', mapping.folio)
         .order('date', { ascending: true })
 
-      schemeTransactions[key] = transactions?.map(tx => ({
+      goalSchemeTransactions[key] = transactions?.map(tx => ({
         date: tx.date,
         amount: parseFloat(tx.amount || '0'),
         type: tx.transaction_type
@@ -619,7 +620,7 @@ export async function getGoalXIRR(goalId: string) {
     // Calculate XIRR for the goal
     const xirrResult = calculateGoalXIRR(
       mappings,
-      schemeTransactions,
+      goalSchemeTransactions,
       schemeCurrentValues
     )
 
@@ -685,7 +686,7 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
       let stockValue = 0
       let npsValue = 0
       let xirrData = null
-      let mappedStocks: any[] = []
+      const mappedStocks: Array<{ stock_code: string; quantity: number; exchange: string; source_id: string }> = []
 
       // Debug: print mappings for this goal
     //  console.log('[XIRR DEBUG] Goal:', goal.name, 'Mappings:', mappings)
@@ -806,7 +807,7 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
               folio: m.folio || ''
             }))
             
-            const schemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
+            const goalSchemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
             const schemeCurrentValues: Record<string, number> = {}
             
             for (const mapping of mutualFundMappings) {
@@ -825,14 +826,14 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
                 .eq('folio', mapping.folio || '')
                 .order('date', { ascending: true })
 
-              schemeTransactions[key] = transactions || []
+              goalSchemeTransactions[key] = transactions || []
               
               schemeCurrentValues[key] = portfolioData.reduce((sum, item) => sum + (item.current_value || 0), 0)
              
             }
            
             //console.log('[XIRR DEBUG] schemeCurrentValues:', schemeCurrentValues)
-            const xirrResult = calculateGoalXIRR(goalMappings, schemeTransactions, schemeCurrentValues)
+            const xirrResult = calculateGoalXIRR(goalMappings, goalSchemeTransactions, schemeCurrentValues)
             xirrData = {
               xirr: xirrResult.xirr, 
               xirrPercentage: xirrResult.xirr * 100,

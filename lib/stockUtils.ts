@@ -64,34 +64,55 @@ export async function fetchStockPrice(symbol: string, exchange?: string): Promis
 export async function fetchStockPrices(symbols: string[], exchanges?: string[]): Promise<StockPricesResponse | null> {
   try {
     const BATCH_SIZE = 5
-    let allPrices: Record<string, any> = {}
+    let allPrices: Record<string, {
+      price: number | null
+      currency: string
+      exchangeRate?: number
+      originalPrice?: number
+      originalCurrency?: string
+    }> = {}
     let timestamp = new Date().toISOString()
+    
     for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
       const batchSymbols = symbols.slice(i, i + BATCH_SIZE)
       const batchExchanges = exchanges ? exchanges.slice(i, i + BATCH_SIZE) : undefined
-      const response = await fetch('/api/stock-prices', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ symbols: batchSymbols, exchanges: batchExchanges })
-      })
-      if (!response.ok) {
-        console.error('Failed to fetch stock prices:', response.status)
+      
+      try {
+        const response = await fetch('/api/stock-prices', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ symbols: batchSymbols, exchanges: batchExchanges })
+        })
+        
+        if (!response.ok) {
+          console.error('Failed to fetch stock prices:', response.status)
+          // Continue with next batch instead of failing completely
+          continue
+        }
+        
+        const data = await response.json()
+        if (!data.success) {
+          console.error('API error:', data.error)
+          // Continue with next batch instead of failing completely
+          continue
+        }
+        
+        allPrices = { ...allPrices, ...data.prices }
+        timestamp = data.timestamp || timestamp
+      } catch (batchError) {
+        console.error('Error in batch request:', batchError)
+        // Continue with next batch instead of failing completely
         continue
       }
-      const data = await response.json()
-      if (!data.success) {
-        console.error('API error:', data.error)
-        continue
-      }
-      allPrices = { ...allPrices, ...data.prices }
-      timestamp = data.timestamp || timestamp
     }
+    
     return { success: true, prices: allPrices, timestamp }
   } catch (error) {
     console.error('Error fetching stock prices:', error)
-    return null
+    // Return empty prices instead of null to prevent UI crashes
+    return { success: true, prices: {}, timestamp: new Date().toISOString() }
   }
 }
 

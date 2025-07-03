@@ -1,12 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
 import StockForm from '@/components/StockForm'
 import { fetchStockPrices, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
 import { useState as useMenuState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
 interface Stock {
   id: string
@@ -29,7 +28,6 @@ interface StockWithValue extends Stock {
 
 export default function StocksPage() {
   const [showStockForm, setShowStockForm] = useState(false)
-  const router = useRouter()
   const [editStock, setEditStock] = useState<StockWithValue | null>(null)
   const [editQuantity, setEditQuantity] = useState('')
   const [editDate, setEditDate] = useState('')
@@ -38,7 +36,6 @@ export default function StocksPage() {
   const [openMenuId, setOpenMenuId] = useMenuState<string | null>(null)
   const menuRefs = useRef<{ [id: string]: HTMLDivElement | null }>({})
   const [sortState, setSortState] = useState<{ key: 'alphabetical' | 'value', direction: 'asc' | 'desc' }>({ key: 'alphabetical', direction: 'asc' })
-  const queryClient = useQueryClient()
 
   // React Query: fetch stocks and prices together
   const {
@@ -119,8 +116,9 @@ export default function StocksPage() {
       }
 
       await refetch()
-    } catch (err: any) {
-      console.error('Error in handleStockDeleted:', err)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      console.error('Error in handleStockDeleted:', errorMessage)
     }
   }
 
@@ -179,21 +177,23 @@ export default function StocksPage() {
         .eq('id', editStock!.id)
         .eq('user_id', session.user.id)
       if (error) {
-        setEditError(error.message)
+        const errorMessage = error instanceof Error ? error.message : 'Error updating stock'
+        setEditError(errorMessage)
         setEditLoading(false)
         return
       }
       await refetch()
       closeEditModal()
-    } catch (err: any) {
-      setEditError(err.message || 'Error updating stock')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error updating stock'
+      setEditError(errorMessage)
     } finally {
       setEditLoading(false)
     }
   }
 
   // Sorting logic for stocks
-  let sortedStocks = [...(stocks as StockWithValue[])]
+  const sortedStocks = [...(stocks as StockWithValue[])]
   if (sortState.key === 'value') {
     sortedStocks.sort((a: StockWithValue, b: StockWithValue) => {
       const aVal = a.currentValue || 0

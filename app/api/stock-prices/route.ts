@@ -135,8 +135,22 @@ async function fetchStockPrice(symbol: string, exchange?: string): Promise<{
 }
 
 // Function to fetch multiple stock prices
-async function fetchMultipleStockPrices(symbols: string[], exchanges?: string[]): Promise<Record<string, any>> {
-  const results: Record<string, any> = {}
+async function fetchMultipleStockPrices(symbols: string[], exchanges?: string[]): Promise<Record<string, {
+  price: number | null
+  currency: string
+  exchangeRate?: number
+  originalPrice?: number
+  originalCurrency?: string
+  error?: string
+}>> {
+  const results: Record<string, {
+    price: number | null
+    currency: string
+    exchangeRate?: number
+    originalPrice?: number
+    originalCurrency?: string
+    error?: string
+  }> = {}
   for (let i = 0; i < symbols.length; i++) {
     const symbol = symbols[i]
     const exchange = exchanges?.[i]
@@ -146,7 +160,8 @@ async function fetchMultipleStockPrices(symbols: string[], exchanges?: string[])
       results[symbol] = result
     } catch (error) {
       // If fetching fails, set price: null and currency: 'INR', and include error
-      results[symbol] = { price: null, currency: 'INR', error: (error as Error).message }
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      results[symbol] = { price: null, currency: 'INR', error: errorMessage }
     }
     if (symbols.length > 1) {
       await new Promise(resolve => setTimeout(resolve, 1000))

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { getAvailableSchemes, getGoalMappings } from '@/lib/portfolioUtils'
 
@@ -31,11 +31,7 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
   const [error, setError] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
 
-  useEffect(() => {
-    loadData()
-  }, [goalId])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
       const { data: { session } } = await supabase.auth.getSession()
@@ -62,7 +58,7 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
       }
 
       // Then get all mappings for those goals
-      let allGoalMappings: any[] = []
+      let allGoalMappings: Record<string, unknown>[] = []
       if (userGoals && userGoals.length > 0) {
         const goalIds = userGoals.map((goal: { id: string }) => goal.id)
         const { data: mappings, error: mappingsError } = await supabase
@@ -79,7 +75,7 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
 
       // Filter out schemes that are already mapped to any goal
       const mappedSchemeKeys = new Set()
-      allGoalMappings.forEach((mapping: { scheme_name: string; folio: string | null }) => {
+      allGoalMappings.forEach((mapping: Record<string, unknown>) => {
         const key = `${mapping.scheme_name}-${mapping.folio || ''}`
         mappedSchemeKeys.add(key)
       })
@@ -98,12 +94,17 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
       setAvailableSchemes(unmappedSchemes)
       setCurrentMappings(currentGoalMappings)
       setHasChanges(false) // Reset changes flag when loading
-    } catch (err: any) {
-      setError(err.message || 'Error loading data')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error loading data'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
-  }
+  }, [goalId])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const addMapping = async (schemeName: string, folio: string) => {
     try {
@@ -126,8 +127,9 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
       const mappings = await getGoalMappings(goalId)
       setCurrentMappings(mappings)
       setHasChanges(true)
-    } catch (err: any) {
-      setError(err.message || 'Error adding mapping')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error adding mapping'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
@@ -149,8 +151,9 @@ export default function GoalSchemeMapping({ goalId, goalName, onClose, onMapping
       const mappings = await getGoalMappings(goalId)
       setCurrentMappings(mappings)
       setHasChanges(true)
-    } catch (err: any) {
-      setError(err.message || 'Error removing mapping')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error removing mapping'
+      setError(errorMessage)
     }
   }
 

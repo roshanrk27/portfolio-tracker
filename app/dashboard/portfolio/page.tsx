@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, isNavUpToDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
+import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
 import RefreshNavButton from '@/components/RefreshNavButton'
 
 interface PortfolioHolding {
@@ -36,7 +36,7 @@ export default function PortfolioDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
-  const [isNavUpToDateState, setIsNavUpToDateState] = useState(false)
+
   const [schemeXirrMap, setSchemeXirrMap] = useState<Record<string, string>>({})
   const [xirrLoading, setXirrLoading] = useState(true)
   const [mfXirr, setMfXirr] = useState<{ formattedXIRR: string; xirr: number; converged: boolean } | null>(null)
@@ -51,18 +51,16 @@ export default function PortfolioDashboard() {
       } else {
         setLoading(false)
         try {
-          const [portfolioData, summaryData, latestNavDateData, navUpToDate, schemeXirrArr, mfXirrData] = await Promise.all([
+          const [portfolioData, summaryData, latestNavDateData, schemeXirrArr, mfXirrData] = await Promise.all([
             getCurrentPortfolio(session.user.id),
             getPortfolioSummary(session.user.id),
             getLatestNavDate(),
-            isNavUpToDate(),
             getSchemeXIRRs(session.user.id),
             getPortfolioXIRR(session.user.id)
           ])
           setPortfolio(portfolioData)
           setSummary(summaryData)
           setLatestNavDate(latestNavDateData)
-          setIsNavUpToDateState(navUpToDate)
           // Map XIRR results for quick lookup
           const xirrMap: Record<string, string> = {}
           for (const x of schemeXirrArr) {
@@ -75,8 +73,9 @@ export default function PortfolioDashboard() {
             xirr: mfXirrData.xirr,
             converged: mfXirrData.converged
           } : null)
-        } catch (err: any) {
-          setError(err.message)
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+          setError(errorMessage)
         }
       }
     }
@@ -92,9 +91,7 @@ export default function PortfolioDashboard() {
     }).format(amount)
   }
 
-  const formatPercentage = (percentage: number) => {
-    return `${percentage >= 0 ? '+' : ''}${percentage.toFixed(2)}%`
-  }
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-IN')
@@ -105,11 +102,10 @@ export default function PortfolioDashboard() {
     const { data: { session } } = await supabase.auth.getSession()
     if (session) {
       try {
-        const [portfolioData, summaryData, latestNavDateData, navUpToDate, schemeXirrArr, mfXirrData] = await Promise.all([
+        const [portfolioData, summaryData, latestNavDateData, schemeXirrArr, mfXirrData] = await Promise.all([
           getCurrentPortfolio(session.user.id),
           getPortfolioSummary(session.user.id),
           getLatestNavDate(),
-          isNavUpToDate(),
           getSchemeXIRRs(session.user.id),
           getPortfolioXIRR(session.user.id)
         ])
@@ -117,7 +113,6 @@ export default function PortfolioDashboard() {
         setPortfolio(portfolioData)
         setSummary(summaryData)
         setLatestNavDate(latestNavDateData)
-        setIsNavUpToDateState(navUpToDate)
         // Map XIRR results for quick lookup
         const xirrMap: Record<string, string> = {}
         for (const x of schemeXirrArr) {
@@ -130,9 +125,10 @@ export default function PortfolioDashboard() {
           xirr: mfXirrData.xirr,
           converged: mfXirrData.converged
         } : null)
-      } catch (err: any) {
-        setError(err.message)
-      }
+              } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+          setError(errorMessage)
+        }
     }
   }
 
@@ -147,7 +143,7 @@ export default function PortfolioDashboard() {
   }
 
   // Sorting logic
-  let sortedPortfolio = [...portfolio]
+  const sortedPortfolio = [...portfolio]
   if (sortState === 'xirr-asc') {
     sortedPortfolio.sort((a, b) => {
       const xirrA = getXirrValue(a)

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { parseUploadedFile } from './parse'
-import { fileUploadSchema, formatValidationErrors } from '@/lib/validation'
+import { fileUploadSchema } from '@/lib/validation'
 import { useRouter } from 'next/navigation'
 
 export default function UploadPage() {
@@ -59,13 +59,9 @@ export default function UploadPage() {
         // Validate file with Zod
         fileUploadSchema.parse({ file })
         setSelectedFile(file)
-      } catch (err: any) {
-        if (err.name === 'ZodError') {
-          const errorMessage = formatValidationErrors(err)
-          setFileError(errorMessage)
-        } else {
-          setFileError('Invalid file selected')
-        }
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Invalid file selected'
+        setFileError(errorMessage)
         setSelectedFile(null)
       }
     }
@@ -104,7 +100,7 @@ export default function UploadPage() {
       const fileName = `${timestamp}-${selectedFile.name}`
 
       // Upload file to Supabase storage
-      const { data: storageData, error: storageError } = await supabase.storage
+      const { error: storageError } = await supabase.storage
         .from('uploads')
         .upload(fileName, selectedFile)
 
@@ -155,9 +151,10 @@ export default function UploadPage() {
         fileInput.value = ''
       }
 
-    } catch (error: any) {
-      console.error('Upload error:', error)
-      setUploadStatus(`Upload failed: ${error.message}`)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      console.error('Upload error:', errorMessage)
+      setUploadStatus(`Upload failed: ${errorMessage}`)
     } finally {
       setUploading(false)
     }
@@ -302,8 +299,8 @@ export default function UploadPage() {
                     </a>
                   </p>
                   <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                    <li>• Choose specific time frame that's after the latest available date shown above</li>
-                    <li>• Select "Transacted folios and folios with balance" option</li>
+                    <li>• Choose specific time frame that&apos;s after the latest available date shown above</li>
+                    <li>• Select &quot;Transacted folios and folios with balance&quot; option</li>
                   </ul>
                 </div>
 
@@ -348,7 +345,7 @@ export default function UploadPage() {
                 <ul className="text-sm text-gray-700 space-y-1">
                   <li>• Always choose a date range after your latest transaction to avoid duplicates</li>
                   <li>• The CAMS2CSV tool is open source and safe to use</li>
-                  <li>• Make sure to select "Transacted folios and folios with balance" for complete data</li>
+                  <li>• Make sure to select &quot;Transacted folios and folios with balance&quot; for complete data</li>
                   <li>• CSV files should be under 10MB in size</li>
                 </ul>
               </div>

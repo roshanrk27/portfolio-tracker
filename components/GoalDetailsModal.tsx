@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { getGoalMappings, getGoalXIRR } from '@/lib/portfolioUtils'
 import { calculateSchemeXIRR, formatXIRR } from '@/lib/xirr'
-import { calculateAssetAllocation } from '@/lib/assetAllocation'
+
 import AssetAllocationBar from './AssetAllocationBar'
 import { useQuery } from '@tanstack/react-query'
 import { fetchStockPrices } from '@/lib/stockUtils'
@@ -55,7 +55,7 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     error?: string
     current_value: number
   } | null>(null)
-  const [stockRows, setStockRows] = useState<any[]>([])
+  const [stockRows, setStockRows] = useState<{ stock_code: string; quantity: number; exchange: string; source_id: string }[]>([])
   const [stockPrices, setStockPrices] = useState<Record<string, { inr: number; usd?: number }>>({})
   const [npsHoldings, setNpsHoldings] = useState<NpsHoldingDetail[]>([])
 
@@ -68,13 +68,15 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
           loadSchemeDetails(),
           loadNpsDetails()
         ])
-      } catch (err: any) {
-        setError(err.message || 'Error loading details')
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Error loading details'
+        setError(errorMessage)
       } finally {
         setLoading(false)
       }
     }
     loadAllDetails()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal.id])
 
   useEffect(() => {
@@ -84,19 +86,32 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     }
   }, [goal])
 
+  // Debug NPS holdings
+  useEffect(() => {
+    console.log('[DEBUG_NPS_TABLE] NPS holdings state:', npsHoldings)
+  }, [npsHoldings])
+
   // Prepare symbols and exchanges for the query
   const symbols = stockRows.map(stock => stock.stock_code)
   const exchanges = stockRows.map(stock => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
 
-  const { data: pricesData, isLoading: pricesLoading } = useQuery({
+  const { data: pricesData } = useQuery({
     queryKey: ['stockPrices', symbols, exchanges],
     queryFn: async () => {
       if (symbols.length === 0) return {}
-      const res = await fetchStockPrices(symbols, exchanges)
-      return res?.prices || {}
+      try {
+        const res = await fetchStockPrices(symbols, exchanges)
+        return res?.prices || {}
+      } catch (error) {
+        console.error('Error fetching stock prices:', error)
+        // Return empty object instead of throwing to prevent UI crashes
+        return {}
+      }
     },
     enabled: symbols.length > 0,
     staleTime: 1000 * 60 * 5, // 5 minutes
+    retry: 1, // Only retry once to avoid infinite loops
+    retryDelay: 1000, // Wait 1 second before retry
   })
 
   // Convert pricesData to the format expected by the rest of the component
@@ -106,16 +121,24 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
     for (const stock of stockRows) {
       const priceObj = pricesData[stock.stock_code]
       if (priceObj && priceObj.price) {
-        formatted[stock.stock_code] = {
-          inr: priceObj.price,
-          usd: priceObj.originalCurrency === 'USD' ? priceObj.originalPrice : undefined
+        if (priceObj.originalCurrency === 'USD') {
+          // US stock: price is converted to INR, originalPrice is in USD
+          formatted[stock.stock_code] = {
+            inr: priceObj.price,
+            usd: priceObj.originalPrice
+          }
+        } else {
+          // Indian stock: price is already in INR
+          formatted[stock.stock_code] = {
+            inr: priceObj.price
+          }
         }
       }
     }
     setStockPrices(formatted)
   }, [pricesData, stockRows])
 
-  const loadSchemeDetails = async () => {
+  const loadSchemeDetails = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -216,60 +239,88 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       }
 
       setSchemeDetails(details)
-    } catch (err: any) {
-      setError(err.message || 'Error loading scheme details')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error loading scheme details'
+      setError(errorMessage)
     }
-  }
+  }, [goal.id])
 
-  const loadNpsDetails = async () => {
+  const loadNpsDetails = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       // Get goal mappings
       const mappings = await getGoalMappings(goal.id)
-      const npsMappings = mappings.filter((m: any) => m.source_type === 'nps' && m.source_id)
+      console.log('[DEBUG_NPS] All mappings:', mappings)
+      const npsMappings = mappings.filter((m: Record<string, unknown>) => m.source_type === 'nps' && m.source_id)
+      console.log('[DEBUG_NPS] NPS mappings:', npsMappings)
       if (npsMappings.length === 0) {
+        console.log('[DEBUG_NPS] No NPS mappings found')
         setNpsHoldings([])
         return
       }
-      const npsIds = npsMappings.map((m: any) => m.source_id)
+      const npsIds = npsMappings.map((m: Record<string, unknown>) => typeof m.source_id === 'string' ? m.source_id : '')
+      console.log('[DEBUG_NPS] NPS IDs to fetch:', npsIds)
       // Fetch nps_holdings for these IDs
       const { data: holdings, error: holdingsError } = await supabase
         .from('nps_holdings')
         .select('id, fund_code, units, nps_funds(fund_name)')
         .in('id', npsIds)
       if (holdingsError) throw holdingsError
+      console.log('[DEBUG_NPS] Raw holdings data:', holdings)
       // Fetch NAVs for all fund_codes
-      const fundCodes = Array.from(new Set((holdings || []).map((h: any) => h.fund_code)))
+      const fundCodes = Array.from(new Set((holdings || []).map((h: Record<string, unknown>) => typeof h.fund_code === 'string' ? h.fund_code : '')))
       let navMap: Record<string, number> = {}
       if (fundCodes.length > 0) {
+        console.log('[DEBUG_NPS] Fetching NAVs for fund codes:', fundCodes)
         const { data: navs, error: navsError } = await supabase
           .from('nps_nav')
-          .select('fund_code, nav')
+          .select('fund_code, nav, nav_date')
           .in('fund_code', fundCodes)
+          .order('nav_date', { ascending: false })
         if (navsError) throw navsError
-        navMap = (navs || []).reduce((acc: Record<string, number>, nav: any) => {
-          acc[nav.fund_code] = parseFloat(nav.nav)
-          return acc
-        }, {})
+        console.log('[DEBUG_NPS] Raw NAV data:', navs)
+        
+        // Get the latest NAV for each fund code
+        const latestNavs = new Map<string, number>()
+        for (const nav of navs || []) {
+          const fundCode = typeof nav.fund_code === 'string' ? nav.fund_code : ''
+          if (!latestNavs.has(fundCode)) {
+            const navValue = typeof nav.nav === 'string' ? parseFloat(nav.nav) : typeof nav.nav === 'number' ? nav.nav : 0
+            latestNavs.set(fundCode, navValue)
+          }
+        }
+        navMap = Object.fromEntries(latestNavs)
+        console.log('[DEBUG_NPS] Processed NAV map:', navMap)
       }
       // Prepare details
-      const details: NpsHoldingDetail[] = (holdings || []).map((h: any) => {
-        const nav = navMap[h.fund_code] || 0
+      const details: NpsHoldingDetail[] = (holdings || []).map((h: Record<string, unknown>) => {
+        const fund_code = typeof h.fund_code === 'string' ? h.fund_code : ''
+        const id = typeof h.id === 'string' ? h.id : ''
+        const units = typeof h.units === 'string' ? parseFloat(h.units) : typeof h.units === 'number' ? h.units : 0
+        let fund_name = fund_code
+        if (typeof h.nps_funds === 'object' && h.nps_funds !== null && 'fund_name' in h.nps_funds) {
+          fund_name = (h.nps_funds as { fund_name?: string }).fund_name || fund_code
+        }
+        const nav = navMap[fund_code] || 0
+        const current_value = nav * units
+        console.log('[DEBUG_NPS] NPS Holding:', { fund_code, fund_name, units, nav, current_value })
         return {
-          id: h.id,
-          fund_name: h.nps_funds?.fund_name || h.fund_code,
-          fund_code: h.fund_code,
-          units: parseFloat(h.units),
+          id,
+          fund_name,
+          fund_code,
+          units,
           nav,
-          current_value: nav * parseFloat(h.units)
+          current_value
         }
       })
+      console.log('[DEBUG_NPS] Final NPS holdings:', details)
       setNpsHoldings(details)
-    } catch (err: any) {
-      setError(err.message || 'Error loading NPS details')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error loading NPS details'
+      setError(errorMessage)
     }
-  }
+  }, [goal.id])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -292,10 +343,6 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(num)
-  }
-
-  const calculateTotalValue = () => {
-    return schemeDetails.reduce((sum, scheme) => sum + scheme.current_value, 0)
   }
 
   const calculateTotalUnits = () => {
@@ -473,7 +520,7 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {schemeDetails.map((scheme, index) => (
+                  {schemeDetails.map((scheme) => (
                     <tr key={scheme.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {scheme.scheme_name} {' '}
@@ -549,7 +596,7 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
 
         {npsHoldings.length > 0 && (
           <div className="mt-8">
-            <h3 className="text-lg font-semibold text-purple-700 mb-2">NPS Holdings</h3>
+            <h3 className="text-lg font-semibold text-purple-700 mb-2">NPS Holdings ({npsHoldings.length})</h3>
             <div className="overflow-x-auto rounded-lg border border-purple-200 bg-purple-50">
               <table className="min-w-full divide-y divide-purple-200">
                 <thead className="bg-purple-100">

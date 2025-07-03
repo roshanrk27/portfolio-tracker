@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+interface NavData {
+  fund_code: string
+  nav: number
+  nav_date: string
+}
+
 export async function POST(req: NextRequest) {
   const logs: string[] = []
   try {
@@ -46,7 +52,7 @@ export async function POST(req: NextRequest) {
     logs.push(`Found ${fundCodes.length} fund codes`)
     // For each fund_code, fetch NAV from npsnav.in/api/detailed/{fund_code}
     let upsertCount = 0
-    const sampleNavs: any[] = []
+    const sampleNavs: NavData[] = []
     for (const fund_code of fundCodes) {
       try {
         const url = `https://npsnav.in/api/detailed/${fund_code}`
@@ -82,15 +88,17 @@ export async function POST(req: NextRequest) {
         } else {
           logs.push(`Upsert error for ${fund_code}: ${error.message}`)
         }
-      } catch (err: any) {
-        logs.push(`Error for ${fund_code}: ${err.message}`)
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+        logs.push(`Error for ${fund_code}: ${errorMessage}`)
       }
     }
     logs.push(`Upserted NAVs for ${upsertCount} funds`)
     logs.push('Sample:', JSON.stringify(sampleNavs))
     return NextResponse.json({ success: true, logs })
-  } catch (err: any) {
-    logs.push('Error: ' + err.message)
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+    logs.push('Error: ' + errorMessage)
     return NextResponse.json({ success: false, logs }, { status: 500 })
   }
 } 

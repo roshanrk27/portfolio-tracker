@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { goalFormSchema, formatValidationErrors } from '@/lib/validation'
+import { z } from 'zod'
 
 interface GoalFormProps {
   onGoalAdded: () => void
@@ -81,23 +82,23 @@ export default function GoalForm({ onGoalAdded, onCancel }: GoalFormProps) {
         targetDate: ''
       })
       onGoalAdded()
-    } catch (err: any) {
-      if (err.name === 'ZodError') {
+    } catch (err: unknown) {
+      if (err instanceof z.ZodError) {
         // Handle Zod validation errors
         const errorMessage = formatValidationErrors(err)
         setError(errorMessage)
-        
         // Set individual field errors
         const fieldErrors: Record<string, string> = {}
-        err.errors.forEach((error: any) => {
-          if (error.path[0]) {
-            fieldErrors[error.path[0]] = error.message
+        err.errors.forEach((error) => {
+          if (error.path && Array.isArray(error.path) && error.path[0]) {
+            fieldErrors[error.path[0] as string] = error.message
           }
         })
         setFieldErrors(fieldErrors)
       } else {
-        console.error('Error in handleSubmit:', err)
-        setError(err.message || 'An error occurred')
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred'
+        console.error('Error in handleSubmit:', errorMessage)
+        setError(errorMessage)
       }
     } finally {
       setLoading(false)

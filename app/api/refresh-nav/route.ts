@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
 import { updateNavData } from '@/lib/updateNavData'
-
-// Create server-side Supabase client
-const supabaseServer = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,10 +32,11 @@ export async function POST(request: NextRequest) {
       )
     }
     
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     console.error('Error in refresh NAV API:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

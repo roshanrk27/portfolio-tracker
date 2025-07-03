@@ -45,7 +45,7 @@ export async function updateNavData(userId?: string) {
     }))
     
     // Insert NAV data into database - update existing rows instead of creating new ones
-    const { data, error } = await supabaseServer
+    const { error } = await supabaseServer
       .from('nav_data')
       .upsert(navDataToInsert, {
         onConflict: 'scheme_code',
@@ -99,11 +99,12 @@ export async function updateNavData(userId?: string) {
       }
     }
     
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('NAV update error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return {
       success: false,
-      error: error.message
+      error: errorMessage
     }
   }
 }
@@ -111,7 +112,14 @@ export async function updateNavData(userId?: string) {
 function parseAMFINavData(navText: string) {
   const lines = navText.split('\n')
   console.log('Lines:', lines)
-  const navEntries: any[] = []
+  const navEntries: Array<{
+    schemeCode: string
+    isinDivPayout: string | null
+    isinDivReinvestment: string | null
+    schemeName: string
+    navValue: number
+    navDate: string
+  }> = []
   
   for (const line of lines) {
     const trimmedLine = line.trim()
@@ -188,9 +196,15 @@ export async function getLatestNavForSchemes(schemeNames: string[]) {
     }
     
     // Group by scheme_name and get the latest for each
-    const latestNavs = data.reduce((acc: any, nav: any) => {
-      if (!acc[nav.scheme_name] || new Date(nav.nav_date) > new Date(acc[nav.scheme_name].nav_date)) {
-        acc[nav.scheme_name] = nav
+    const latestNavs = data.reduce((acc: Record<string, unknown>, nav: Record<string, unknown>) => {
+      const schemeName = typeof nav.scheme_name === 'string' ? nav.scheme_name : '';
+      const navDate = typeof nav.nav_date === 'string' ? nav.nav_date : '';
+      const existingNavDate = typeof acc[schemeName] === 'object' && acc[schemeName] !== null && 'nav_date' in acc[schemeName] 
+        ? (acc[schemeName] as { nav_date: string }).nav_date 
+        : '';
+      
+      if (!acc[schemeName] || new Date(navDate) > new Date(existingNavDate)) {
+        acc[schemeName] = nav
       }
       return acc
     }, {})

@@ -4,15 +4,27 @@ import { useState, useEffect } from 'react'
 import { updateNavData } from '@/lib/updateNavData'
 import { supabase } from '@/lib/supabaseClient'
 
+interface UpdateResult {
+  success: boolean
+  message?: string
+  error?: string
+  count?: number
+  date?: string
+  navUpdated?: number
+  portfolioRefreshed?: number
+  portfolioError?: string
+}
+
 export default function NavUpdatePage() {
   const [isUpdating, setIsUpdating] = useState(false)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<UpdateResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
     // Get current user ID
     const getCurrentUser = async () => {
+      if (!supabase) return
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
         setUserId(session.user.id)
@@ -32,10 +44,11 @@ export default function NavUpdatePage() {
       if (response.success) {
         setResult(response)
       } else {
-        setError(response.error)
+        setError(response.error || 'Unknown error occurred')
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred'
+      setError(errorMessage)
     } finally {
       setIsUpdating(false)
     }
@@ -90,7 +103,7 @@ export default function NavUpdatePage() {
           <ul className="list-disc list-inside space-y-3 text-gray-700 text-lg">
             <li className="font-medium">Fetches latest NAV data from AMFI India</li>
             <li className="font-medium">Updates existing NAV records with latest values</li>
-            <li className="font-medium">Uses actual NAV date from AMFI (not today's date)</li>
+            <li className="font-medium">Uses actual NAV date from AMFI (not today&apos;s date)</li>
             <li className="font-medium">No duplicate entries - each scheme has only one current NAV record</li>
             <li className="font-medium">Automatically refreshes portfolio values with updated NAV data</li>
             <li className="font-medium">Updated values are immediately available in Dashboard and Mutual Funds page</li>

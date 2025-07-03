@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { stockFormSchema, formatValidationErrors } from '@/lib/validation'
+import { z } from 'zod'
 
 interface StockFormProps {
   onStockAdded: () => void
@@ -91,23 +92,26 @@ export default function StockForm({ onStockAdded, onCancel, existingHoldings }: 
         exchange: 'NSE'
       })
       onStockAdded()
-    } catch (err: any) {
-      if (err.name === 'ZodError') {
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'name' in err && err.name === 'ZodError') {
         // Handle Zod validation errors
-        const errorMessage = formatValidationErrors(err)
+        const errorMessage = formatValidationErrors(err as z.ZodError)
         setError(errorMessage)
         
         // Set individual field errors
         const fieldErrors: Record<string, string> = {}
-        err.errors.forEach((error: any) => {
-          if (error.path[0]) {
-            fieldErrors[error.path[0]] = error.message
-          }
-        })
+        if ('errors' in err && Array.isArray(err.errors)) {
+          (err.errors as Array<Record<string, unknown>>).forEach((error) => {
+            if (error.path && Array.isArray(error.path) && error.path[0]) {
+              fieldErrors[error.path[0] as string] = error.message as string
+            }
+          })
+        }
         setFieldErrors(fieldErrors)
       } else {
         console.error('Error in handleSubmit:', err)
-        setError(err.message || 'An error occurred')
+        const errorMessage = err instanceof Error ? err.message : 'An error occurred'
+        setError(errorMessage)
       }
     } finally {
       setLoading(false)

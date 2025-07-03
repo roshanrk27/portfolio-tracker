@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { getAvailableSchemes, getGoalMappings } from '@/lib/portfolioUtils'
 
@@ -23,6 +23,19 @@ interface Stock {
   stock_code: string
   quantity: number
   exchange: string
+}
+
+interface NpsHolding {
+  id: string
+  fund_code: string
+  units: string | number
+  user_id?: string
+  as_of_date?: string
+  created_at?: string
+  updated_at?: string
+  nps_funds?: {
+    fund_name: string
+  }
 }
 
 interface GoalMapping {
@@ -51,15 +64,11 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   const [activeTab, setActiveTab] = useState<'mutual_funds' | 'stocks' | 'nps'>('mutual_funds')
   const [allGoalMappings, setAllGoalMappings] = useState<GoalMapping[]>([])
   const [selectedStockIds, setSelectedStockIds] = useState<string[]>([])
-  const [availableNpsHoldings, setAvailableNpsHoldings] = useState<any[]>([])
+  const [availableNpsHoldings, setAvailableNpsHoldings] = useState<NpsHolding[]>([])
   const [selectedNpsIds, setSelectedNpsIds] = useState<string[]>([])
   const [npsMappingsChanged, setNpsMappingsChanged] = useState(false)
 
-  useEffect(() => {
-    loadData()
-  }, [goal.id])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
       const { data: { session } } = await supabase.auth.getSession()
@@ -81,15 +90,20 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       setAvailableStocks(stocks)
       setAllGoalMappings(allGoalMappings)
       const mappedNpsIds = new Set(
-        (allGoalMappings as any[]).filter((m: any) => m.source_type === 'nps' && m.source_id).map((m: any) => m.source_id)
+        allGoalMappings.filter(m => m.source_type === 'nps' && m.source_id).map(m => m.source_id)
       )
-      setAvailableNpsHoldings(npsHoldings.filter((h: any) => !mappedNpsIds.has(h.id)))
-    } catch (err: any) {
-      setError(err.message || 'Error loading data')
+      setAvailableNpsHoldings(npsHoldings.filter(h => !mappedNpsIds.has(h.id)))
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error loading data'
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
-  }
+  }, [goal.id])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   const loadStocks = async (userId: string) => {
     try {
@@ -121,7 +135,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
     const goalIds = userGoals.map((goal: { id: string }) => goal.id)
     const { data: mappings, error: mappingsError } = await supabase
       .from('goal_scheme_mapping')
-      .select('scheme_name, folio, source_type, source_id')
+      .select('id, goal_id, scheme_name, folio, source_type, source_id, allocation_percentage')
       .in('goal_id', goalIds)
     if (mappingsError) return []
     return mappings || []
@@ -174,8 +188,9 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       const mappings = await getGoalMappings(goal.id)
       setCurrentMappings(mappings)
       onMappingUpdated()
-    } catch (err: any) {
-      setError(err.message || 'Error adding mapping')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error adding mapping'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
@@ -199,21 +214,15 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       const mappings = await getGoalMappings(goal.id)
       setCurrentMappings(mappings)
       onMappingUpdated()
-    } catch (err: any) {
-      setError(err.message || 'Error removing mapping')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error removing mapping'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
   }
 
-  const isSchemeMapped = (schemeName: string, folio: string, sourceType: 'mutual_fund' | 'stock' | 'nps', sourceId?: string) => {
-    return currentMappings.some(mapping => 
-      mapping.scheme_name === schemeName && 
-      mapping.folio === folio &&
-      mapping.source_type === sourceType &&
-      mapping.source_id === sourceId
-    )
-  }
+  
 
   const getUnmappedSchemes = () => {
     const mappedSchemeKeys = new Set(
@@ -256,8 +265,9 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       setSelectedStockIds([])
       // Do not close the modal; let user close explicitly
       await loadData()
-    } catch (err: any) {
-      setError(err.message || 'Error adding stocks')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error adding stocks'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
@@ -276,7 +286,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
     setError('')
     try {
       for (const npsId of selectedNpsIds) {
-        const nps = availableNpsHoldings.find((h: any) => h.id === npsId)
+        const nps = availableNpsHoldings.find(h => h.id === npsId)
         if (nps) {
           await addMapping(
             nps.nps_funds?.fund_name || nps.fund_code,
@@ -289,21 +299,15 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       }
       setSelectedNpsIds([])
       await loadData()
-    } catch (err: any) {
-      setError(err.message || 'Error adding NPS holdings')
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Error adding NPS holdings'
+      setError(errorMessage)
     } finally {
       setSaving(false)
     }
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount)
-  }
+
 
   const getSourceTypeDisplayName = (sourceType: string) => {
     switch (sourceType) {
@@ -540,7 +544,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
                   </div>
                 ) : (
                   <>
-                    {availableNpsHoldings.map((nps: any) => (
+                    {availableNpsHoldings.map((nps: NpsHolding) => (
                       <div key={nps.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
                         <div className="flex items-center">
                           <input

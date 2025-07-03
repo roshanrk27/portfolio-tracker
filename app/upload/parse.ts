@@ -94,8 +94,9 @@ export async function parseUploadedFile(uploadId: string) {
 
     return { success: true, transactions, count: transactions.length }
 
-  } catch (error: any) {
-    console.error('Parse error:', error)
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Parse error:', errorMessage)
     
     // Update upload status to failed
     try {
@@ -107,13 +108,23 @@ export async function parseUploadedFile(uploadId: string) {
       console.error('Failed to update upload status:', updateError)
     }
 
-    return { success: false, error: error.message }
+    return { success: false, error: errorMessage }
   }
 }
 
 function parseCAMSCSV(csvContent: string) {
   const lines = csvContent.split('\n')
-  const transactions: any[] = []
+  const transactions: Array<{
+    date: string
+    scheme: string
+    folio_number: string
+    isin: string
+    amount: number
+    type: string
+    nav: number
+    units: number
+    unit_balance: number
+  }> = []
 
   console.log('Total lines in CSV:', lines.length)
 
