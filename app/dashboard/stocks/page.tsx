@@ -65,8 +65,7 @@ export default function StocksPage() {
   // Separate query for stock prices with caching
   const {
     data: stockPrices = {},
-    isLoading: pricesLoading,
-    refetch: refetchPrices
+    isLoading: pricesLoading
   } = useQuery<Record<string, {
     price: number | null
     currency: string

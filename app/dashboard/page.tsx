@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getPortfolioSummary, getGoals, getGoalXIRR, getGoalMappings, getLatestNavDate } from '@/lib/portfolioUtils'
+import { getPortfolioSummary, getGoals, getGoalMappings, getLatestNavDate, fetchGoalsWithDetails, batchCalculateXIRR } from '@/lib/portfolioUtils'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
 import { useQuery } from '@tanstack/react-query'
+import { useCallback } from 'react';
 
 
 
@@ -37,30 +38,7 @@ interface Goal {
   nps_value?: number
 }
 
-interface Stock {
-  id: string
-  stock_code: string
-  quantity: number
-  exchange: string
-  user_id: string
-}
 
-interface PortfolioQueryResult {
-  scheme_name: string
-  folio: string
-  current_value: string
-}
-
-interface NpsHoldingQueryResult {
-  id: string
-  fund_code: string
-  units: string
-}
-
-interface NpsNav {
-  fund_code: string
-  nav: string
-}
 
 interface PriceData {
   price: number
@@ -69,6 +47,14 @@ interface PriceData {
   originalPrice?: number
   originalCurrency?: string
   error?: string
+}
+
+interface GoalXirrResult {
+  xirr: number;
+  xirrPercentage: number;
+  formattedXIRR: string;
+  converged: boolean;
+  error?: string;
 }
 
 async function getNpsValue(userId: string): Promise<number> {
@@ -167,10 +153,8 @@ async function getStockSummary(userId: string, stockPrices?: Record<string, numb
 
 export default function Dashboard() {
   const [stockSummary, setStockSummary] = useState<StockSummary | null>(null)
-  const [goals, setGoals] = useState<Goal[]>([])
   const [loading, setLoading] = useState(true)
   const [stockLoading, setStockLoading] = useState(true)
-  const [goalsLoading, setGoalsLoading] = useState(true)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
   const router = useRouter()
@@ -305,6 +289,50 @@ export default function Dashboard() {
     refetchOnWindowFocus: false,
   });
 
+  // React Query for Goals with Details
+  const {
+    data: goals = [],
+    isLoading: goalsLoading,
+    refetch: refetchGoals
+  } = useQuery<Goal[]>({
+    queryKey: ['goals', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      return await fetchGoalsWithDetails(userId);
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false,
+  });
+
+  // React Query for XIRR calculations (separate cache for better performance)
+  const {
+    refetch: refetchXIRR
+  } = useQuery<Record<string, GoalXirrResult>>({
+    queryKey: ['xirr', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      
+      // Get basic goals and mappings
+      const goalsData = await getGoals(userId);
+      if (!goalsData || goalsData.length === 0) return {};
+      
+      const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)));
+      const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings);
+      
+      // Create a map of goal ID to XIRR data
+      const xirrMap: Record<string, GoalXirrResult> = {};
+      goalsData.forEach((goal, index) => {
+        xirrMap[goal.id] = xirrResults[index];
+      });
+      
+      return xirrMap;
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 10, // 10 minutes for XIRR (less frequent updates)
+    refetchOnWindowFocus: false,
+  });
+
 
 
 
@@ -316,146 +344,15 @@ export default function Dashboard() {
         router.push('/auth/login')
       } else {
         setLoading(false)
-        try {
-          const [summaryData, goalsData] = await Promise.all([
-            getPortfolioSummary(session.user.id),
-            getGoals(session.user.id),
-          ])
-
-          // --- Batch fetch all mappings for all goals ---
-          // 1. Gather all mappings for all goals
-          const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)))
-          // 2. Collect all unique stock IDs, (scheme_name, folio) pairs, and NPS holding IDs
-          const allStockIds: string[] = [];
-          const allPortfolioPairs: { scheme_name: string; folio: string }[] = [];
-          const allNpsIds: string[] = [];
-          goalsData.forEach((goal, i) => {
-            for (const mapping of allMappings[i]) {
-              if (mapping.source_type === 'stock' && mapping.source_id) {
-                allStockIds.push(mapping.source_id);
-              } else if (mapping.source_type === 'mutual_fund') {
-                allPortfolioPairs.push({ scheme_name: mapping.scheme_name, folio: mapping.folio || '' });
-              } else if (mapping.source_type === 'nps' && mapping.source_id) {
-                allNpsIds.push(mapping.source_id);
-              }
-            }
-          });
-          // Remove duplicates
-          const uniqueStockIds = Array.from(new Set(allStockIds));
-          const uniquePortfolioPairs = Array.from(new Set(allPortfolioPairs.map((p: { scheme_name: string; folio: string }) => `${p.scheme_name}|${p.folio}`)))
-            .map((key: string) => {
-              const [scheme_name, folio] = key.split('|');
-              return { scheme_name, folio };
-            });
-          const uniqueNpsIds = Array.from(new Set(allNpsIds));
-          // 3. Batch fetch all stocks, portfolios, and NPS holdings
-          let stocks: Stock[] = [];
-          if (uniqueStockIds.length > 0) {
-            const { data } = await supabase
-              .from('stocks')
-              .select('*')
-              .eq('user_id', session.user.id)
-              .in('id', uniqueStockIds)
-            stocks = data || [];
-          }
-          let portfolios: PortfolioQueryResult[] = [];
-          if (uniquePortfolioPairs.length > 0) {
-            const { data } = await supabase
-              .from('current_portfolio')
-              .select('scheme_name, folio, current_value')
-              .eq('user_id', session.user.id);
-            portfolios = data || [];
-          }
-          let npsHoldings: NpsHoldingQueryResult[] = [];
-          if (uniqueNpsIds.length > 0) {
-            const { data } = await supabase
-              .from('nps_holdings')
-              .select('id, fund_code, units')
-              .eq('user_id', session.user.id)
-              .in('id', uniqueNpsIds);
-            npsHoldings = data || [];
-          }
-          // Fetch all needed NAVs for NPS holdings
-          let npsNavs: NpsNav[] = [];
-          if (npsHoldings.length > 0) {
-            const fundCodes = Array.from(new Set(npsHoldings.map((h: NpsHoldingQueryResult) => h.fund_code)));
-            if (fundCodes.length > 0) {
-              const { data } = await supabase
-                .from('nps_nav')
-                .select('fund_code, nav')
-                .in('fund_code', fundCodes);
-              npsNavs = data || [];
-            }
-          }
-          const npsNavMap: Record<string, number> = {};
-          for (const nav of npsNavs) {
-            npsNavMap[nav.fund_code] = parseFloat(nav.nav);
-          }
-          // 4. For each goal, fetch XIRR and mutual fund value using pre-fetched data
-          const goalsWithDetails = await Promise.all(goalsData.map(async (goal, i): Promise<Goal> => {
-            const xirrData = await getGoalXIRR(goal.id)
-            const mappings = allMappings[i]
-            console.log('[DEBUG_ROSHAN] GoalID, mappings:', goal.id, mappings)
-            let mutualFundValue = 0
-            const mappedStocks: { stock_code: string; quantity: number; exchange: string; source_id: string }[] = [];
-            let npsValue = 0
-            for (const mapping of mappings) {
-              if (mapping.source_type === 'mutual_fund') {
-                // Use pre-fetched portfolios, match scheme_name and folio (with fallback to empty string), ignore case and trim
-                const mappingScheme = (mapping.scheme_name || '').trim().toLowerCase();
-                const mappingFolio = (mapping.folio || '').trim().toLowerCase();
-                const portfolioData = portfolios.filter(
-                  (p: PortfolioQueryResult) =>
-                    (p.scheme_name || '').trim().toLowerCase() === mappingScheme &&
-                    ((p.folio || '').trim().toLowerCase() === mappingFolio)
-                );
-                const mfValue = (portfolioData || []).reduce((sum: number, item: PortfolioQueryResult) => sum + (parseFloat(item.current_value || '0') || 0), 0);
-                mutualFundValue += mfValue;
-              } else if (mapping.source_type === 'stock' && mapping.source_id) {
-                // Use pre-fetched stocks
-                const stockData = stocks.find((s: Stock) => s.id === mapping.source_id);
-                if (stockData) {
-                  mappedStocks.push({
-                    stock_code: stockData.stock_code,
-                    quantity: stockData.quantity,
-                    exchange: stockData.exchange,
-                    source_id: stockData.id
-                  })
-                }
-              } else if (mapping.source_type === 'nps' && mapping.source_id) {
-                // Use pre-fetched npsHoldings and npsNavMap
-                const nps = npsHoldings.find((h: NpsHoldingQueryResult) => h.id === mapping.source_id);
-                if (nps) {
-                  const nav = npsNavMap[nps.fund_code] || 0;
-                  npsValue += nav * (parseFloat(nps.units) || 0);
-                }
-              }
-            }
-            return {
-              ...goal,
-              ...xirrData,
-              mutual_fund_value: mutualFundValue,
-              mappedStocks,
-              nps_value: npsValue,
-              current_amount: mutualFundValue + npsValue // stock value will be added client-side
-            }
-          }))
-          setGoals(goalsWithDetails)
-          setGoalsLoading(false)
-        } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-          console.error('Error in checkAuth:', errorMessage)
-        }
       }
     }
     checkAuth()
-
   }, [router])
 
   // Fetch all unique mapped stock prices for all goals
 
 
-  const loadDashboardData = async (stockPricesOverride?: Record<string, number>) => {
+  const loadDashboardData = useCallback(async (stockPricesOverride?: Record<string, number>) => {
     console.log('[DEBUG_ROSHAN] loadDashboardData called')
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -471,30 +368,23 @@ export default function Dashboard() {
       console.log('[DEBUG_ROSHAN] error in loadDashboardData:', errorMessage)
       setStockLoading(false)
     }
-  }
+  }, [dashboardStockPrices]);
 
-  // useEffect for loading dashboard data when stock prices are available
+    // useEffect for loading dashboard data when stock prices are available
   useEffect(() => {
     if (dashboardStockPricesLoading === false) {
       console.log('[DEBUG_ROSHAN] stock prices loaded, updating dashboard data')
-      loadDashboardData()
+        loadDashboardData()
     }
-  }, [dashboardStockPricesLoading, dashboardStockPrices])
+  }, [dashboardStockPricesLoading, dashboardStockPrices, loadDashboardData])
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
-    setGoalsLoading(true)
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session) {
-      const goalsData = await getGoals(session.user.id)
-      setGoals(goalsData)
-      setGoalsLoading(false)
-    }
+    await Promise.all([refetchGoals(), refetchXIRR()])
   }
 
   const handleGoalDeleted = async (goalId: string) => {
     try {
-      setGoalsLoading(true)
       const { error } = await supabase
         .from('goals')
         .delete()
@@ -502,43 +392,29 @@ export default function Dashboard() {
 
       if (error) {
         console.error('Error deleting goal:', error)
-        setGoalsLoading(false)
         return
       }
 
-      // Refresh goals list
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const goalsData = await getGoals(session.user.id)
-        setGoals(goalsData)
-        setGoalsLoading(false)
-      }
+      // Refresh goals and XIRR data using React Query
+      await Promise.all([refetchGoals(), refetchXIRR()])
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleGoalDeleted:', errorMessage)
-      setGoalsLoading(false)
     }
   }
 
   const handleMappingChanged = async () => {
     try {
-      setGoalsLoading(true)
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const goalsData = await getGoals(session.user.id)
-        setGoals(goalsData)
-        setGoalsLoading(false)
-      }
+      // Refresh goals and XIRR data using React Query
+      await Promise.all([refetchGoals(), refetchXIRR()])
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleMappingChanged:', errorMessage)
-      setGoalsLoading(false)
     }
   }
 
   const handleGoalEdit = async (updatedGoal: Goal) => {
     try {
-      setGoalsLoading(true)
       const { error } = await supabase
         .from('goals')
         .update({
@@ -551,21 +427,14 @@ export default function Dashboard() {
 
       if (error) {
         console.error('Error updating goal:', error)
-        setGoalsLoading(false)
         return
       }
 
-      // Refresh goals list
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        const goalsData = await getGoals(session.user.id)
-        setGoals(goalsData)
-        setGoalsLoading(false)
-      }
+      // Refresh goals list using React Query (XIRR doesn't need refresh for goal edits)
+      await refetchGoals()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleGoalEdit:', errorMessage)
-      setGoalsLoading(false)
     }
   }
 
@@ -584,9 +453,13 @@ export default function Dashboard() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        await refetchPortfolioSummary(); // Invalidate and refetch MF value
-        await refetchNpsValue(); // Invalidate and refetch NPS value
-        await refetchDashboardStockPrices(); // Invalidate and refetch stock prices
+        await Promise.all([
+          refetchPortfolioSummary(), // Invalidate and refetch MF value
+          refetchNpsValue(), // Invalidate and refetch NPS value
+          refetchDashboardStockPrices(), // Invalidate and refetch stock prices
+          refetchGoals(), // Invalidate and refetch goals
+          refetchXIRR() // Invalidate and refetch XIRR data
+        ]);
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'

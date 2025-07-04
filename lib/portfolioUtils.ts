@@ -938,4 +938,334 @@ export async function isNavUpToDate() {
     console.error('Error checking if NAV is up to date:', error)
     return false
   }
+}
+
+// TypeScript interfaces for better type safety
+interface StockData {
+  id: string
+  stock_code: string
+  quantity: number
+  exchange: string
+  user_id: string
+}
+
+interface PortfolioData {
+  scheme_name: string
+  folio: string
+  current_value: string
+}
+
+interface NpsHoldingData {
+  id: string
+  fund_code: string
+  units: string
+}
+
+interface NpsNavData {
+  fund_code: string
+  nav: string
+}
+
+interface GoalMapping {
+  source_type: string
+  source_id?: string
+  scheme_name: string
+  folio: string
+}
+
+interface GoalData {
+  id: string
+  name: string
+  description: string | null
+  target_amount: number
+  target_date: string
+  current_amount: number
+  created_at: string
+  updated_at: string
+  user_id: string
+}
+
+/**
+ * Fetch all goals with complete details including mappings, XIRR, and related data
+ * This is optimized for React Query caching
+ */
+export async function fetchGoalsWithDetails(userId: string) {
+  try {
+    // 1. Get basic goals
+    const goalsData = await getGoals(userId)
+    if (!goalsData || goalsData.length === 0) {
+      return []
+    }
+
+    // 2. Batch fetch all mappings for all goals
+    const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)))
+    
+    // 3. Collect all unique stock IDs, (scheme_name, folio) pairs, and NPS holding IDs
+    const allStockIds: string[] = []
+    const allPortfolioPairs: { scheme_name: string; folio: string }[] = []
+    const allNpsIds: string[] = []
+    
+    goalsData.forEach((goal, i) => {
+      for (const mapping of allMappings[i]) {
+        if (mapping.source_type === 'stock' && mapping.source_id) {
+          allStockIds.push(mapping.source_id)
+        } else if (mapping.source_type === 'mutual_fund') {
+          allPortfolioPairs.push({ scheme_name: mapping.scheme_name, folio: mapping.folio || '' })
+        } else if (mapping.source_type === 'nps' && mapping.source_id) {
+          allNpsIds.push(mapping.source_id)
+        }
+      }
+    })
+
+    // Remove duplicates
+    const uniqueStockIds = Array.from(new Set(allStockIds))
+    const uniquePortfolioPairs = Array.from(new Set(allPortfolioPairs.map((p: { scheme_name: string; folio: string }) => `${p.scheme_name}|${p.folio}`)))
+      .map((key: string) => {
+        const [scheme_name, folio] = key.split('|')
+        return { scheme_name, folio }
+      })
+    const uniqueNpsIds = Array.from(new Set(allNpsIds))
+
+    // 4. Batch fetch all stocks, portfolios, and NPS holdings
+    let stocks: StockData[] = []
+    if (uniqueStockIds.length > 0) {
+      const { data } = await supabaseServer
+        .from('stocks')
+        .select('*')
+        .eq('user_id', userId)
+        .in('id', uniqueStockIds)
+      stocks = data || []
+    }
+
+    let portfolios: PortfolioData[] = []
+    if (uniquePortfolioPairs.length > 0) {
+      const { data } = await supabaseServer
+        .from('current_portfolio')
+        .select('scheme_name, folio, current_value')
+        .eq('user_id', userId)
+      portfolios = data || []
+    }
+
+    let npsHoldings: NpsHoldingData[] = []
+    if (uniqueNpsIds.length > 0) {
+      const { data } = await supabaseServer
+        .from('nps_holdings')
+        .select('id, fund_code, units')
+        .eq('user_id', userId)
+        .in('id', uniqueNpsIds)
+      npsHoldings = data || []
+    }
+
+    // Fetch all needed NAVs for NPS holdings
+    let npsNavs: NpsNavData[] = []
+    if (npsHoldings.length > 0) {
+      const fundCodes = Array.from(new Set(npsHoldings.map((h: NpsHoldingData) => h.fund_code)))
+      if (fundCodes.length > 0) {
+        const { data } = await supabaseServer
+          .from('nps_nav')
+          .select('fund_code, nav')
+          .in('fund_code', fundCodes)
+        npsNavs = data || []
+      }
+    }
+
+    const npsNavMap: Record<string, number> = {}
+    for (const nav of npsNavs) {
+      npsNavMap[nav.fund_code] = parseFloat(nav.nav)
+    }
+
+    // 5. Batch calculate XIRR for all goals (much faster than individual calls)
+    const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings)
+    
+    // 6. Combine goals with XIRR results and other data
+    const goalsWithDetails = goalsData.map((goal, i) => {
+      const mappings = allMappings[i] as GoalMapping[]
+      const xirrData = xirrResults[i]
+      
+      let mutualFundValue = 0
+      const mappedStocks: { stock_code: string; quantity: number; exchange: string; source_id: string }[] = []
+      let npsValue = 0
+      
+      for (const mapping of mappings) {
+        if (mapping.source_type === 'mutual_fund') {
+          // Use pre-fetched portfolios, match scheme_name and folio (with fallback to empty string), ignore case and trim
+          const mappingScheme = (mapping.scheme_name || '').trim().toLowerCase()
+          const mappingFolio = (mapping.folio || '').trim().toLowerCase()
+          const portfolioData = portfolios.filter(
+            (p: PortfolioData) =>
+              (p.scheme_name || '').trim().toLowerCase() === mappingScheme &&
+              ((p.folio || '').trim().toLowerCase() === mappingFolio)
+          )
+          const mfValue = (portfolioData || []).reduce((sum: number, item: PortfolioData) => sum + (parseFloat(item.current_value || '0') || 0), 0)
+          mutualFundValue += mfValue
+        } else if (mapping.source_type === 'stock' && mapping.source_id) {
+          // Use pre-fetched stocks
+          const stockData = stocks.find((s: StockData) => s.id === mapping.source_id)
+          if (stockData) {
+            mappedStocks.push({
+              stock_code: stockData.stock_code,
+              quantity: stockData.quantity,
+              exchange: stockData.exchange,
+              source_id: stockData.id
+            })
+          }
+        } else if (mapping.source_type === 'nps' && mapping.source_id) {
+          // Use pre-fetched npsHoldings and npsNavMap
+          const nps = npsHoldings.find((h: NpsHoldingData) => h.id === mapping.source_id)
+          if (nps) {
+            const nav = npsNavMap[nps.fund_code] || 0
+            npsValue += nav * (parseFloat(nps.units) || 0)
+          }
+        }
+      }
+
+      return {
+        ...goal,
+        ...xirrData,
+        mutual_fund_value: mutualFundValue,
+        mappedStocks,
+        nps_value: npsValue,
+        current_amount: mutualFundValue + npsValue // stock value will be added client-side
+      }
+    })
+
+    return goalsWithDetails
+  } catch (error) {
+    console.error('Error in fetchGoalsWithDetails:', error)
+    return []
+  }
+}
+
+/**
+ * Batch calculate XIRR for all goals using pre-fetched data
+ * This significantly improves performance by avoiding sequential database calls
+ */
+export async function batchCalculateXIRR(userId: string, goals: GoalData[], allMappings: GoalMapping[][]) {
+  try {
+    // 1. Collect all unique scheme-folio pairs and goal IDs
+    const allSchemeFolioPairs: { scheme_name: string; folio: string; goalId: string }[] = []
+    const goalMappingIndex: Record<string, number> = {} // goalId -> mapping index
+    
+    goals.forEach((goal, goalIndex) => {
+      const mappings = allMappings[goalIndex]
+      mappings.forEach((mapping, mappingIndex) => {
+        if (mapping.source_type === 'mutual_fund' && mapping.scheme_name) {
+          allSchemeFolioPairs.push({
+            scheme_name: mapping.scheme_name,
+            folio: mapping.folio || '',
+            goalId: goal.id
+          })
+          goalMappingIndex[goal.id] = mappingIndex
+        }
+      })
+    })
+
+    if (allSchemeFolioPairs.length === 0) {
+      // No mutual fund mappings, return empty XIRR data for all goals
+      return goals.map(() => ({
+        xirr: 0,
+        xirrPercentage: 0,
+        formattedXIRR: '0.00%',
+        converged: true,
+        error: 'No mutual fund schemes mapped',
+        current_value: 0
+      }))
+    }
+
+    // 2. Batch fetch all transactions for all schemes
+    const uniqueSchemeFolios = Array.from(new Set(allSchemeFolioPairs.map(p => `${p.scheme_name}|${p.folio}`)))
+    const allTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
+    
+    // Fetch all transactions in batches
+    for (const schemeFolio of uniqueSchemeFolios) {
+      const [scheme_name, folio] = schemeFolio.split('|')
+      const { data: transactions } = await supabaseServer
+        .from('transactions')
+        .select('date, amount, transaction_type')
+        .eq('user_id', userId)
+        .eq('scheme_name', scheme_name)
+        .eq('folio', folio)
+        .order('date', { ascending: true })
+      
+      allTransactions[schemeFolio] = transactions?.map(tx => ({
+        date: tx.date,
+        amount: parseFloat(tx.amount || '0'),
+        type: tx.transaction_type
+      })) || []
+    }
+
+    // 3. Batch fetch all current portfolio values
+    const allPortfolioValues: Record<string, number> = {}
+    const { data: portfolioEntries } = await supabaseServer
+      .from('current_portfolio')
+      .select('scheme_name, folio, current_value')
+      .eq('user_id', userId)
+    
+    if (portfolioEntries) {
+      for (const entry of portfolioEntries) {
+        const key = `${entry.scheme_name}|${entry.folio}`
+        allPortfolioValues[key] = parseFloat(entry.current_value || '0')
+      }
+    }
+
+    // 4. Calculate XIRR for each goal using pre-fetched data
+    const xirrResults = goals.map((goal, goalIndex) => {
+      const mappings = allMappings[goalIndex]
+      const mutualFundMappings = mappings.filter(m => m.source_type === 'mutual_fund')
+      
+      if (mutualFundMappings.length === 0) {
+        return {
+          xirr: 0,
+          xirrPercentage: 0,
+          formattedXIRR: '0.00%',
+          converged: true,
+          error: 'No mutual fund schemes mapped',
+          current_value: 0
+        }
+      }
+
+      // Collect all transactions and current values for this goal's mutual fund mappings
+      const goalSchemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
+      const schemeCurrentValues: Record<string, number> = {}
+      
+      for (const mapping of mutualFundMappings) {
+        const key = `${mapping.scheme_name}-${mapping.folio}`
+        const schemeFolioKey = `${mapping.scheme_name}|${mapping.folio}`
+        
+        goalSchemeTransactions[key] = allTransactions[schemeFolioKey] || []
+        schemeCurrentValues[key] = allPortfolioValues[schemeFolioKey] || 0
+      }
+
+      // Calculate XIRR for this goal
+      const xirrResult = calculateGoalXIRR(
+        mutualFundMappings,
+        goalSchemeTransactions,
+        schemeCurrentValues
+      )
+
+      const totalCurrentValue = Object.values(schemeCurrentValues).reduce((sum, value) => sum + value, 0)
+
+      return {
+        xirr: xirrResult.xirr,
+        xirrPercentage: xirrResult.xirr * 100,
+        formattedXIRR: formatXIRR(xirrResult.xirr),
+        converged: xirrResult.converged,
+        error: xirrResult.error,
+        current_value: totalCurrentValue
+      }
+    })
+
+    return xirrResults
+  } catch (error) {
+    console.error('Error in batchCalculateXIRR:', error)
+    // Return empty XIRR data for all goals on error
+    return goals.map(() => ({
+      xirr: 0,
+      xirrPercentage: 0,
+      formattedXIRR: '0.00%',
+      converged: true,
+      error: 'Error calculating XIRR',
+      current_value: 0
+    }))
+  }
 } 
