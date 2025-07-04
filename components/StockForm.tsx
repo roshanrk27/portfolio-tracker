@@ -6,7 +6,7 @@ import { stockFormSchema, formatValidationErrors } from '@/lib/validation'
 import { z } from 'zod'
 
 interface StockFormProps {
-  onStockAdded: () => void
+  onStockAdded: (newStock?: { id: string; stock_code: string; quantity: number; purchase_date: string; exchange: string; created_at: string; updated_at: string }) => void
   onCancel: () => void
   existingHoldings: { stock_code: string; exchange: string }[]
 }
@@ -68,7 +68,7 @@ export default function StockForm({ onStockAdded, onCancel, existingHoldings }: 
       const validatedData = stockFormSchema.parse(formData)
 
       // Insert stock into database
-      const { error: insertError } = await supabase
+      const { data: insertedStock, error: insertError } = await supabase
         .from('stocks')
         .insert({
           user_id: session.user.id,
@@ -77,6 +77,8 @@ export default function StockForm({ onStockAdded, onCancel, existingHoldings }: 
           purchase_date: validatedData.purchaseDate,
           exchange: formData.exchange
         })
+        .select()
+        .single()
 
       if (insertError) {
         console.error('Error inserting stock:', insertError)
@@ -84,14 +86,14 @@ export default function StockForm({ onStockAdded, onCancel, existingHoldings }: 
         return
       }
 
-      // Reset form and notify parent
+      // Reset form and notify parent with the new stock data
       setFormData({
         stockCode: '',
         quantity: '',
         purchaseDate: '',
         exchange: 'NSE'
       })
-      onStockAdded()
+      onStockAdded(insertedStock)
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'name' in err && err.name === 'ZodError') {
         // Handle Zod validation errors

@@ -3,9 +3,9 @@
 import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import StockForm from '@/components/StockForm'
-import { fetchStockPrices, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
+import { fetchStockPrices, fetchStockPrice, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
 import { useState as useMenuState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 interface Stock {
   id: string
@@ -37,14 +37,15 @@ export default function StocksPage() {
   const menuRefs = useRef<{ [id: string]: HTMLDivElement | null }>({})
   const [sortState, setSortState] = useState<{ key: 'alphabetical' | 'value', direction: 'asc' | 'desc' }>({ key: 'alphabetical', direction: 'asc' })
 
-  // React Query: fetch stocks and prices together
+  const queryClient = useQueryClient()
+
+  // Separate query for stock data (database)
   const {
     data: stocks = [],
     isLoading: loading,
-    isFetching: pricesLoading,
     error,
-    refetch
-  } = useQuery<StockWithValue[]>({
+    refetch: refetchStocks
+  } = useQuery<Stock[]>({
     queryKey: ['stocks'],
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -55,52 +56,132 @@ export default function StocksPage() {
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false })
       if (error) throw error
-      if (!data || data.length === 0) return []
-      // Fetch current prices for all stocks
-      const validStocks = data.filter((stock: StockWithValue) =>
-        typeof stock.stock_code === 'string' && stock.stock_code.trim() !== '' &&
-          typeof stock.exchange === 'string' && stock.exchange.trim() !== ''
-      )
-      const symbols = validStocks.map((stock: StockWithValue) => stock.stock_code)
-      const exchanges = validStocks.map((stock: StockWithValue) => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
-      const pricesResponse = await fetchStockPrices(symbols, exchanges)
-      if (pricesResponse && pricesResponse.success) {
-        return data.map((stock: StockWithValue) => {
-          if (!symbols.includes(stock.stock_code)) return stock
-          const priceData = pricesResponse.prices[stock.stock_code]
-          if (priceData && priceData.price !== null) {
-            const currentValue = calculateStockValue(stock.quantity, priceData.price)
-            return {
-              ...stock,
-              currentPrice: priceData.price,
-              currentValue: currentValue,
-              currency: priceData.currency,
-              exchangeRate: priceData.exchangeRate,
-              originalPrice: priceData.originalPrice,
-              originalCurrency: priceData.originalCurrency
-            }
-          } else {
-            return {
-              ...stock,
-              currentPrice: undefined,
-              currentValue: undefined,
-              currency: priceData?.currency || 'INR',
-              exchangeRate: priceData?.exchangeRate,
-              originalPrice: priceData?.originalPrice,
-              originalCurrency: priceData?.originalCurrency
-            }
-          }
-        })
-      }
-      return data
+      return data || []
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes to refresh of cache
+    staleTime: 1000 * 60 * 5, // 5 minutes
     refetchOnWindowFocus: false,
   })
 
-  const handleStockAdded = async () => {
+  // Separate query for stock prices with caching
+  const {
+    data: stockPrices = {},
+    isLoading: pricesLoading,
+    refetch: refetchPrices
+  } = useQuery<Record<string, {
+    price: number | null
+    currency: string
+    exchangeRate?: number
+    originalPrice?: number
+    originalCurrency?: string
+  }>>({
+    queryKey: ['stockPrices'],
+    queryFn: async () => {
+      if (!stocks || stocks.length === 0) return {}
+      
+      const validStocks = stocks.filter((stock: Stock) =>
+        typeof stock.stock_code === 'string' && stock.stock_code.trim() !== '' &&
+          typeof stock.exchange === 'string' && stock.exchange.trim() !== ''
+      )
+      
+      if (validStocks.length === 0) return {}
+      
+      const symbols = validStocks.map((stock: Stock) => stock.stock_code)
+      const exchanges = validStocks.map((stock: Stock) => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
+      const pricesResponse = await fetchStockPrices(symbols, exchanges)
+      
+      return pricesResponse?.prices || {}
+    },
+    enabled: stocks.length > 0,
+    staleTime: 1000 * 60 * 2, // 2 minutes for prices
+    refetchOnWindowFocus: false,
+  })
+
+  // Combine stocks with prices
+  const stocksWithValues: StockWithValue[] = stocks.map((stock: Stock) => {
+    const priceData = stockPrices[stock.stock_code]
+    if (priceData && priceData.price !== null) {
+      const currentValue = calculateStockValue(stock.quantity, priceData.price)
+      return {
+        ...stock,
+        currentPrice: priceData.price,
+        currentValue: currentValue,
+        currency: priceData.currency,
+        exchangeRate: priceData.exchangeRate,
+        originalPrice: priceData.originalPrice,
+        originalCurrency: priceData.originalCurrency
+      }
+    } else {
+      return {
+        ...stock,
+        currentPrice: undefined,
+        currentValue: undefined,
+        currency: priceData?.currency || 'INR',
+        exchangeRate: priceData?.exchangeRate,
+        originalPrice: priceData?.originalPrice,
+        originalCurrency: priceData?.originalCurrency
+      }
+    }
+  })
+
+  // Function to fetch price for a single stock
+  const fetchSingleStockPrice = async (stockCode: string, exchange: string) => {
+    const exchangeForAPI = exchange === 'US' ? 'NASDAQ' : exchange
+    const priceData = await fetchStockPrice(stockCode, exchangeForAPI)
+    
+    if (priceData) {
+      // Update the prices cache with new data
+      queryClient.setQueryData(['stockPrices'], (oldData: Record<string, {
+        price: number | null
+        currency: string
+        exchangeRate?: number
+        originalPrice?: number
+        originalCurrency?: string
+      }> | undefined) => ({
+        ...oldData,
+        [stockCode]: {
+          price: priceData.price,
+          currency: priceData.currency,
+          exchangeRate: priceData.exchangeRate,
+          originalPrice: priceData.originalPrice,
+          originalCurrency: priceData.originalCurrency
+        }
+      }))
+    }
+  }
+
+  // Optimistic update for stock quantity
+  const updateStockOptimistically = (stockId: string, newQuantity: number, newDate: string) => {
+    queryClient.setQueryData(['stocks'], (oldData: Stock[] | undefined) => {
+      if (!oldData) return oldData
+      return oldData.map(stock => 
+        stock.id === stockId 
+          ? { ...stock, quantity: newQuantity, updated_at: new Date(newDate).toISOString() }
+          : stock
+      )
+    })
+  }
+
+  // Optimistic update for new stock
+  const addStockOptimistically = (newStock: Stock) => {
+    queryClient.setQueryData(['stocks'], (oldData: Stock[] | undefined) => {
+      if (!oldData) return [newStock]
+      return [newStock, ...oldData]
+    })
+  }
+
+  const handleStockAdded = async (newStock?: { id: string; stock_code: string; quantity: number; purchase_date: string; exchange: string; created_at: string; updated_at: string }) => {
     setShowStockForm(false)
-    await refetch()
+    
+    if (newStock) {
+      // Optimistic update for new stock
+      addStockOptimistically(newStock)
+      
+      // Fetch price for the new stock
+      await fetchSingleStockPrice(newStock.stock_code, newStock.exchange)
+    } else {
+      // Fallback to refetch if no stock data provided
+      await refetchStocks()
+    }
   }
 
   const handleStockDeleted = async (stockId: string) => {
@@ -115,7 +196,7 @@ export default function StocksPage() {
         return
       }
 
-      await refetch()
+      await refetchStocks()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleStockDeleted:', errorMessage)
@@ -131,7 +212,7 @@ export default function StocksPage() {
   }
 
   const getTotalPortfolioValue = () => {
-    return (stocks as StockWithValue[]).reduce((total: number, stock: StockWithValue) => {
+    return stocksWithValues.reduce((total: number, stock: StockWithValue) => {
       return total + (stock.currentValue || 0)
     }, 0)
   }
@@ -164,6 +245,10 @@ export default function StocksPage() {
       setEditLoading(false)
       return
     }
+
+    // Optimistic update
+    updateStockOptimistically(editStock!.id, quantityNum, editDate)
+
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -179,21 +264,30 @@ export default function StocksPage() {
       if (error) {
         const errorMessage = error instanceof Error ? error.message : 'Error updating stock'
         setEditError(errorMessage)
+        // Rollback optimistic update on error
+        await refetchStocks()
         setEditLoading(false)
         return
       }
-      await refetch()
+      
+      // Fetch price for the updated stock if not in cache
+      if (!stockPrices[editStock!.stock_code]) {
+        await fetchSingleStockPrice(editStock!.stock_code, editStock!.exchange)
+      }
+      
       closeEditModal()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error updating stock'
       setEditError(errorMessage)
+      // Rollback optimistic update on error
+      await refetchStocks()
     } finally {
       setEditLoading(false)
     }
   }
 
   // Sorting logic for stocks
-  const sortedStocks = [...(stocks as StockWithValue[])]
+  const sortedStocks = [...stocksWithValues]
   if (sortState.key === 'value') {
     sortedStocks.sort((a: StockWithValue, b: StockWithValue) => {
       const aVal = a.currentValue || 0
@@ -226,7 +320,7 @@ export default function StocksPage() {
           <div className="text-red-600 text-xl mb-4">Error loading stocks</div>
           <p className="text-gray-600">{(error as Error).message}</p>
           <button 
-            onClick={() => refetch()}
+            onClick={() => refetchStocks()}
             className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
           >
             Retry
@@ -259,7 +353,7 @@ export default function StocksPage() {
         </div>
 
         {/* Portfolio Summary Card */}
-        {(stocks as StockWithValue[]).length > 0 && (
+        {stocksWithValues.length > 0 && (
           <div className="mb-6">
             <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
               <div className="flex items-center justify-between">
@@ -281,26 +375,11 @@ export default function StocksPage() {
                 )}
               </div>
             </div>
-            {/* Sorting Controls */}
-            <div className="flex justify-end mt-2 space-x-2">
-              <button
-                className={`px-3 py-1 rounded border text-sm ${sortState.key === 'alphabetical' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
-                onClick={() => setSortState({ key: 'alphabetical', direction: 'asc' })}
-              >
-                Sort A-Z
-              </button>
-              <button
-                className={`px-3 py-1 rounded border text-sm ${sortState.key === 'value' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
-                onClick={() => setSortState({ key: 'value', direction: 'desc' })}
-              >
-                Sort by Value
-              </button>
-            </div>
           </div>
         )}
 
         {/* Stocks List */}
-        {(stocks as StockWithValue[]).length === 0 ? (
+        {stocksWithValues.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <div className="text-gray-400 mb-4">
               <svg className="mx-auto h-16 w-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -353,7 +432,7 @@ export default function StocksPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {(sortedStocks as StockWithValue[]).map((stock: StockWithValue) => (
+                  {sortedStocks.map((stock: StockWithValue) => (
                     <tr key={stock.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{stock.stock_code}</div>
@@ -436,7 +515,7 @@ export default function StocksPage() {
         <StockForm
           onStockAdded={handleStockAdded}
           onCancel={() => setShowStockForm(false)}
-          existingHoldings={(stocks as StockWithValue[]).map((s: StockWithValue) => ({ stock_code: s.stock_code, exchange: s.exchange }))}
+          existingHoldings={stocksWithValues.map((s: StockWithValue) => ({ stock_code: s.stock_code, exchange: s.exchange }))}
         />
       )}
 

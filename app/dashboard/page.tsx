@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { getPortfolioSummary, getGoals, getGoalXIRR, getGoalMappings, getLatestNavDate } from '@/lib/portfolioUtils'
@@ -127,29 +127,13 @@ async function getStockSummary(userId: string, stockPrices?: Record<string, numb
     let totalStockValue = 0
     let totalInvested = 0
 
-    // Use existing prices when available, fetch only missing ones
+    // Use cached prices only - no individual fetching
     for (const stock of stocks) {
-      const key = `${stock.stock_code}|${stock.exchange}`
-      let price = null
-      // Check if we already have this price
-      if (stockPrices && stockPrices[key]) {
-        price = stockPrices[key]
-        console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] price exists for :', key, price)
-      } else {
-        // Only fetch if we don't have it
-        try {
-          console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] fetching price for :', key)
-          const response = await fetch(`/api/stock-prices?symbol=${stock.stock_code}&exchange=${stock.exchange === 'US' ? 'NASDAQ' : stock.exchange}`)
-          if (response.ok) {
-            const priceData = await response.json()
-            if (priceData.success && priceData.price) {
-              price = priceData.price
-            }
-          }
-        } catch (err) {
-          console.error(`Error fetching price for ${stock.stock_code}:`, err)
-        }
-      }
+      // Match the key format used in React Query (US -> NASDAQ conversion)
+      const exchangeForKey = stock.exchange === 'US' ? 'NASDAQ' : stock.exchange
+      const key = `${stock.stock_code}|${exchangeForKey}`
+      const price = stockPrices?.[key]
+      
       if (price) {
         const currentValue = stock.quantity * price
         totalStockValue += currentValue
@@ -189,14 +173,10 @@ export default function Dashboard() {
   const [goalsLoading, setGoalsLoading] = useState(true)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
-  const [stockPrices, setStockPrices] = useState<Record<string, number>>({})
   const router = useRouter()
   
   // Fetch user session and NAV date for cache key
   const [userId, setUserId] = useState<string | null>(null);
-  
-  // Ref to track last fetched stocks to prevent unnecessary API calls
-  const lastFetchedStocksRef = useRef<string>('')
 
   useEffect(() => {
     const fetchSessionAndNavDate = async () => {
@@ -245,14 +225,87 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
-  // Compute a stable dependency for mapped stocks
-  const mappedStocksKey = useMemo(() => {
-    return JSON.stringify(
-      goals
-        .flatMap(goal => (goal.mappedStocks || []).map(stock => ({ symbol: stock.stock_code, exchange: stock.exchange })))
-        .sort((a, b) => (a.symbol + a.exchange).localeCompare(b.symbol + b.exchange))
-    )
-  }, [goals])
+  // React Query for Stock Prices (Dashboard)
+  const {
+    data: dashboardStockPrices = {},
+    isLoading: dashboardStockPricesLoading,
+    refetch: refetchDashboardStockPrices
+  } = useQuery<Record<string, number>>({
+    queryKey: ['dashboardStockPrices', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      
+      // Get all stocks for the user
+      const { data: stocks, error } = await supabase
+        .from('stocks')
+        .select('*')
+        .eq('user_id', userId)
+      
+      if (error || !stocks || stocks.length === 0) {
+        return {}
+      }
+
+      // Collect unique stocks for batch fetching
+      const uniqueStocks: { symbol: string; exchange: string }[] = []
+      const seen = new Set<string>()
+      
+      for (const stock of stocks) {
+        const key = `${stock.stock_code}|${stock.exchange}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          uniqueStocks.push({ 
+            symbol: stock.stock_code, 
+            exchange: stock.exchange === 'US' ? 'NASDAQ' : stock.exchange 
+          })
+        }
+      }
+
+      if (uniqueStocks.length === 0) {
+        return {}
+      }
+
+      // Batch fetch prices (max 5 per batch)
+      const prices: Record<string, number> = {}
+      for (let i = 0; i < uniqueStocks.length; i += 5) {
+        const batch = uniqueStocks.slice(i, i + 5)
+        try {
+          const res = await fetch('/api/stock-prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              symbols: batch.map(s => s.symbol),
+              exchanges: batch.map(s => s.exchange)
+            })
+          })
+          
+          if (res.ok) {
+            const data = await res.json()
+            if (data.prices) {
+              for (const [symbol, priceObjRaw] of Object.entries(data.prices)) {
+                const priceObj = priceObjRaw as PriceData
+                const idx = batch.findIndex(s => s.symbol === symbol)
+                if (idx !== -1) {
+                  const key = `${symbol}|${batch[idx].exchange}`
+                  if (priceObj && typeof priceObj.price === 'number') {
+                    prices[key] = priceObj.price
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching stock prices:', err)
+        }
+      }
+      
+      return prices
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 2, // 2 minutes for prices
+    refetchOnWindowFocus: false,
+  });
+
+
 
 
 
@@ -387,7 +440,6 @@ export default function Dashboard() {
               current_amount: mutualFundValue + npsValue // stock value will be added client-side
             }
           }))
-          setStockSummary(summaryData)
           setGoals(goalsWithDetails)
           setGoalsLoading(false)
         } catch (err: unknown) {
@@ -401,76 +453,7 @@ export default function Dashboard() {
   }, [router])
 
   // Fetch all unique mapped stock prices for all goals
-  const fetchAllMappedStockPrices = async () => {
-    // Collect all unique mapped stocks from goals
-    const uniqueStocks: { symbol: string; exchange: string }[] = []
-    const seen = new Set<string>()
-    for (const goal of goals) {
-      if (goal.mappedStocks) {
-        for (const stock of goal.mappedStocks) {
-          const key = `${stock.stock_code}|${stock.exchange}`
-          console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] key:', key)
-          if (!seen.has(key)) {
-            seen.add(key)
-            uniqueStocks.push({ symbol: stock.stock_code, exchange: stock.exchange })
-          }
-        }
-      }
-    }
-    
-    if (uniqueStocks.length === 0) {
-      console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] no unique stocks found')
-      setStockPrices({})
-      return {}
-    }
-    
-    // Create a stable key for the current stock set
-    const currentStocksKey = JSON.stringify(uniqueStocks.sort((a, b) => (a.symbol + a.exchange).localeCompare(b.symbol + b.exchange)))
-    
-    // Check if we've already fetched these exact stocks
-    if (lastFetchedStocksRef.current === currentStocksKey && Object.keys(stockPrices).length > 0) {
-      console.log('[DEBUG_ROSHAN_MAPPED_STOCKS] stocks already fetched, using cached prices')
-      return stockPrices
-    }
-    // Batch requests (max 5 per batch)
-    const prices: Record<string, number> = {}
-    for (let i = 0; i < uniqueStocks.length; i += 5) {
-      const batch = uniqueStocks.slice(i, i + 5)
-      try {
-        const res = await fetch('/api/stock-prices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            symbols: batch.map(s => s.symbol),
-            exchanges: batch.map(s => s.exchange === 'US' ? 'NASDAQ' : s.exchange)
-          })
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data.prices) {
-            for (const [symbol, priceObjRaw] of Object.entries(data.prices)) {
-              const priceObj = priceObjRaw as PriceData;
-              // Find the exchange for this symbol in the batch
-              const idx = batch.findIndex(s => s.symbol === symbol)
-              if (idx !== -1) {
-                const key = `${symbol}|${batch[idx].exchange}`
-                if (priceObj && typeof priceObj.price === 'number') {
-                  prices[key] = priceObj.price
-                }
-              }
-            }
-          }
-        }
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-        console.error('Error fetching stock prices:', errorMessage)
-      }
-    }
-    setStockPrices(prices)
-    // Update the ref to track what we just fetched
-    lastFetchedStocksRef.current = currentStocksKey
-    return prices;
-  }
+
 
   const loadDashboardData = async (stockPricesOverride?: Record<string, number>) => {
     console.log('[DEBUG_ROSHAN] loadDashboardData called')
@@ -479,7 +462,7 @@ export default function Dashboard() {
       if (!session) return
       setStockLoading(true)
       console.log('[DEBUG_ROSHAN_LOAD_STOCK_SUMMARY] loading stock data')
-      const stockData = await getStockSummary(session.user.id, stockPricesOverride || stockPrices)
+      const stockData = await getStockSummary(session.user.id, stockPricesOverride || dashboardStockPrices)
       console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] stockData:', stockData)
       setStockSummary(stockData)
       setStockLoading(false)
@@ -490,24 +473,13 @@ export default function Dashboard() {
     }
   }
 
-  // Separate useEffect for handling stock price fetching when goals change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // useEffect for loading dashboard data when stock prices are available
   useEffect(() => {
-    if (goals.length > 0) {
-      // Check if there are any mapped stocks before fetching prices
-      const hasMappedStocks = goals.some(goal => goal.mappedStocks && goal.mappedStocks.length > 0)
-      
-      if (hasMappedStocks) {
-        console.log('[DEBUG_ROSHAN] goals with mapped stocks found, fetching stock prices> Goal Length:', goals.length)
-        fetchAllMappedStockPrices().then(prices => {
-          loadDashboardData(prices)
-        })
-      } else {
-        console.log('[DEBUG_ROSHAN] goals found but no mapped stocks, loading dashboard data without stock prices')
-        loadDashboardData()
-      }
+    if (dashboardStockPricesLoading === false) {
+      console.log('[DEBUG_ROSHAN] stock prices loaded, updating dashboard data')
+      loadDashboardData()
     }
-  }, [mappedStocksKey])
+  }, [dashboardStockPricesLoading, dashboardStockPrices])
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
@@ -614,6 +586,7 @@ export default function Dashboard() {
       if (session) {
         await refetchPortfolioSummary(); // Invalidate and refetch MF value
         await refetchNpsValue(); // Invalidate and refetch NPS value
+        await refetchDashboardStockPrices(); // Invalidate and refetch stock prices
       }
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
@@ -694,7 +667,7 @@ export default function Dashboard() {
           ) : null}
 
           {/* Stock Value Card */}
-          {stockLoading ? (
+          {stockLoading || dashboardStockPricesLoading ? (
             <div className="bg-purple-50 border-l-4 border-purple-500 rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -811,8 +784,8 @@ export default function Dashboard() {
                   <GoalCard
                     key={goal.id}
                     goal={goal}
-                    stockPrices={stockPrices}
-                    stockPricesLoading={stockLoading}
+                    stockPrices={dashboardStockPrices}
+                    stockPricesLoading={dashboardStockPricesLoading}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}

@@ -25,33 +25,40 @@ export interface StockPricesResponse {
 // Fetch single stock price
 export async function fetchStockPrice(symbol: string, exchange?: string): Promise<StockPrice | null> {
   try {
-    const url = new URL('/api/stock-prices', window.location.origin)
-    url.searchParams.set('symbol', symbol)
-    if (exchange) {
-      url.searchParams.set('exchange', exchange)
-    }
-    
-    const response = await fetch(url.toString())
-    
+    // Use POST with a single symbol in the array
+    const response = await fetch('/api/stock-prices', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ symbols: [symbol], exchanges: exchange ? [exchange] : undefined })
+    })
+
     if (!response.ok) {
       console.error(`Failed to fetch stock price for ${symbol}:`, response.status)
       return null
     }
 
     const data = await response.json()
-    
+
     if (!data.success) {
       console.error(`API error for ${symbol}:`, data.error)
       return null
     }
 
+    // The batch API returns prices keyed by symbol
+    const priceData = data.prices[symbol]
+    if (!priceData) {
+      return null
+    }
+
     return {
-      symbol: data.symbol,
-      price: data.price,
-      currency: data.currency,
-      exchangeRate: data.exchangeRate,
-      originalPrice: data.originalPrice,
-      originalCurrency: data.originalCurrency,
+      symbol: symbol,
+      price: priceData.price,
+      currency: priceData.currency,
+      exchangeRate: priceData.exchangeRate,
+      originalPrice: priceData.originalPrice,
+      originalCurrency: priceData.originalCurrency,
       timestamp: data.timestamp
     }
   } catch (error) {

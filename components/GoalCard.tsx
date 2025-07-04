@@ -42,7 +42,9 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, sto
 
   const liveStockValue = (goal.mappedStocks || []).reduce((total, stock) => {
     if (!stockPrices) return total
-    const key = `${stock.stock_code}|${stock.exchange}`
+    // Normalize exchange code to match dashboard format
+    const normalizedExchange = stock.exchange === 'US' ? 'NASDAQ' : stock.exchange
+    const key = `${stock.stock_code}|${normalizedExchange}`
     const price = stockPrices[key]
     if (price) {
       return total + stock.quantity * price
