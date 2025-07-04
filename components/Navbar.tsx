@@ -44,7 +44,7 @@ export default function Navbar() {
             </h1>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-6 ml-auto">
             {user && (
               <span className="text-sm text-gray-700">
                 {user.email}
@@ -77,9 +77,12 @@ export default function Navbar() {
 
             <button
               onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              title="Logout"
             >
-              Logout
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
             </button>
           </div>
         </div>
