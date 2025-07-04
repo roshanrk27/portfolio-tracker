@@ -244,7 +244,7 @@ export default function StocksPage() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Stocks</h1>
-              <p className="text-gray-600">Manage your stock investments</p>
+              <p className="text-gray-600">Your current stock investments</p>
             </div>
             <button
               onClick={() => setShowStockForm(true)}
