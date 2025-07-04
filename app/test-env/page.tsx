@@ -6,30 +6,87 @@ import { getPortfolioXIRR, getSchemeXIRRs, getGoalXIRR } from '@/lib/portfolioUt
 import { calculateSchemeXIRR } from '@/lib/xirr'
 import { categorizeScheme } from '@/lib/assetAllocation'
 
+// TypeScript interfaces for better type safety
+interface XIRRResult {
+  xirr: number
+  iterations: number
+  converged: boolean
+  error?: string
+}
+
+interface PortfolioXIRRResult {
+  xirr: number
+  xirrPercentage: number
+  formattedXIRR: string
+  converged: boolean
+  error?: string
+  totalCurrentValue?: number
+  current_value?: number
+}
+
+interface Transaction {
+  date: string
+  transaction_type: string
+  amount: string
+  units: string
+}
+
+interface CashFlow {
+  date: string
+  amount: number
+  type: string
+}
+
+interface XIRRDebug {
+  cashFlows: CashFlow[]
+  xirrResult: XIRRResult
+}
+
+interface FolioScheme {
+  folio: string
+  scheme_name: string
+}
+
+interface Goal {
+  id: string
+  name: string
+}
+
+interface SchemeXIRR {
+  scheme_name: string
+  folio: string
+  xirr: number
+  xirrPercentage: number
+  formattedXIRR: string
+  converged: boolean
+  error?: string
+  current_value: number
+}
+
 export default function TestEnv() {
-  const [portfolioXIRR, setPortfolioXIRR] = useState<unknown>(null)
-  const [schemeXIRRs, setSchemeXIRRs] = useState<Record<string, unknown>[]>([])
-  const [goalXIRR, setGoalXIRR] = useState<unknown>(null)
+  const [portfolioXIRR, setPortfolioXIRR] = useState<PortfolioXIRRResult | null>(null)
+  const [schemeXIRRs, setSchemeXIRRs] = useState<SchemeXIRR[]>([])
+  const [goalXIRR, setGoalXIRR] = useState<PortfolioXIRRResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [folioSchemes, setFolioSchemes] = useState<Record<string, unknown>[]>([])
+  const [folioSchemes, setFolioSchemes] = useState<FolioScheme[]>([])
   const [selectedFolio, setSelectedFolio] = useState('')
   const [selectedScheme, setSelectedScheme] = useState('')
-  const [schemeTxs, setSchemeTxs] = useState<Record<string, unknown>[]>([])
+  const [schemeTxs, setSchemeTxs] = useState<Transaction[]>([])
   const [schemeCurrentValue, setSchemeCurrentValue] = useState<number>(0)
-  const [schemeXirrDebug, setSchemeXirrDebug] = useState<unknown>(null)
+  const [schemeXirrDebug, setSchemeXirrDebug] = useState<XIRRDebug | null>(null)
   
   // Goal debug state
-  const [goals, setGoals] = useState<Record<string, unknown>[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
   const [selectedGoal, setSelectedGoal] = useState('')
-  const [goalTxs, setGoalTxs] = useState<Record<string, unknown>[]>([])
+  const [goalTxs, setGoalTxs] = useState<Transaction[]>([])
   const [goalCurrentValue, setGoalCurrentValue] = useState<number>(0)
-  const [goalXirrDebug, setGoalXirrDebug] = useState<unknown>(null)
+  const [goalXirrDebug, setGoalXirrDebug] = useState<XIRRDebug | null>(null)
   
   // Portfolio debug state
-  const [portfolioTxs, setPortfolioTxs] = useState<Record<string, unknown>[]>([])
+  const [portfolioTxs, setPortfolioTxs] = useState<Transaction[]>([])
   const [portfolioCurrentValue, setPortfolioCurrentValue] = useState<number>(0)
-  const [portfolioXirrDebug, setPortfolioXirrDebug] = useState<unknown>(null)
+  const [portfolioXirrDebug, setPortfolioXirrDebug] = useState<XIRRDebug | null>(null)
 
   const [schemeNames, setSchemeNames] = useState<string[]>([])
 
@@ -146,7 +203,7 @@ export default function TestEnv() {
       .eq('folio', folio)
       .eq('scheme_name', scheme)
       .order('date', { ascending: true })
-    setSchemeTxs(txs || [])
+    setSchemeTxs((txs || []) as unknown as Transaction[])
     // Fetch current value
     const { data: cp } = await supabase
       .from('current_portfolio')
@@ -157,7 +214,7 @@ export default function TestEnv() {
       .single()
     setSchemeCurrentValue(cp?.current_value ? parseFloat(cp.current_value) : 0)
     // Prepare cash flows for XIRR with proper categorization
-    const cashFlows = (txs || []).map((tx: Record<string, unknown>) => {
+    const cashFlows: CashFlow[] = (txs || []).map((tx: Transaction) => {
       const transactionType = tx.transaction_type.toLowerCase()
       
       // Negative cash flows (money going out)
@@ -185,7 +242,7 @@ export default function TestEnv() {
     })
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      (txs || []).map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      (txs || []).map((tx: Transaction) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
       cp?.current_value ? parseFloat(cp.current_value) : 0
     )
     setSchemeXirrDebug({ cashFlows, xirrResult })
@@ -205,10 +262,10 @@ export default function TestEnv() {
       .select('scheme_name, folio')
       .eq('goal_id', goalId)
     
-    if (!mappings || mappings.length === 0) {
-      setGoalXirrDebug({ cashFlows: [], xirrResult: { xirr: 0, converged: true, error: 'No schemes mapped' } })
-      return
-    }
+          if (!mappings || mappings.length === 0) {
+        setGoalXirrDebug({ cashFlows: [], xirrResult: { xirr: 0, iterations: 0, converged: true, error: 'No schemes mapped' } })
+        return
+      }
     
     // Collect all transactions for mapped schemes
     const allTxs: Record<string, unknown>[] = []
@@ -239,12 +296,12 @@ export default function TestEnv() {
       }
     }
     
-    setGoalTxs(allTxs)
+    setGoalTxs(allTxs as unknown as Transaction[])
     setGoalCurrentValue(totalCurrentValue)
     
     // Prepare cash flows for XIRR
-    const cashFlows = allTxs.map((tx: Record<string, unknown>) => {
-      const transactionType = tx.transaction_type.toLowerCase()
+    const cashFlows: CashFlow[] = allTxs.map((tx: Record<string, unknown>) => {
+      const transactionType = (tx.transaction_type as string).toLowerCase()
       
       let amount: number
       
@@ -257,26 +314,26 @@ export default function TestEnv() {
           transactionType.includes('dividend') || 
           transactionType.includes('switch in') || 
           transactionType.includes('shift in')) {
-        amount = -parseFloat(tx.amount)
+        amount = -parseFloat(tx.amount as string)
         console.log('Negative flow:', tx.transaction_type, amount)
       }
       // Positive cash flows (money coming in - you're receiving money)
       else if (transactionType.includes('switch out') || 
                transactionType.includes('redemption') || 
                transactionType.includes('shift out')) {
-        amount = parseFloat(tx.amount)
+        amount = parseFloat(tx.amount as string)
         console.log('Positive flow:', tx.transaction_type, amount)
       }
       // Default case - treat as positive (shouldn't happen with proper transaction types)
       else {
-        amount = parseFloat(tx.amount)
+        amount = parseFloat(tx.amount as string)
         console.log('Default flow:', tx.transaction_type, amount)
       }
       
       return {
-        date: tx.date,
+        date: tx.date as string,
         amount,
-        type: tx.transaction_type
+        type: tx.transaction_type as string
       }
     })
     
@@ -290,7 +347,7 @@ export default function TestEnv() {
     
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      allTxs.map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      allTxs.map((tx: Record<string, unknown>) => ({ date: (tx.date as string), amount: parseFloat(tx.amount as string), type: tx.transaction_type as string })),
       totalCurrentValue
     )
     
@@ -317,26 +374,32 @@ export default function TestEnv() {
       .select('current_value')
       .eq('user_id', session.user.id)
     
-    const totalCurrentValue = portfolio?.reduce((sum: number, p: Record<string, unknown>) => sum + parseFloat(p.current_value || '0'), 0) || 0
+    //const totalCurrentValue = portfolio?.reduce((sum: number, p: Record<string, unknown>) => sum + parseFloat(p.current_value || '0'), 0) || 0
     
-    setPortfolioTxs(txs || [])
+    //ChatGPT suggestion
+    const totalCurrentValue = portfolio?.reduce((sum: number, p: Record<string, unknown>) => {
+      const value = p.current_value ?? '0';
+      return sum + parseFloat(value as string);
+    }, 0) || 0;
+
+    setPortfolioTxs((txs || []) as unknown as Transaction[])
     setPortfolioCurrentValue(totalCurrentValue)
     
     // Prepare cash flows for XIRR
-    const cashFlows = (txs || []).map((tx: Record<string, unknown>) => {
-      const transactionType = tx.transaction_type.toLowerCase()
+    const cashFlows: CashFlow[] = (txs || []).map((tx: Record<string, unknown>) => {
+      const transactionType = (tx.transaction_type as string).toLowerCase()
       const isNegative = ['purchase', 'investment', 'dividend', 'switch in', 'shift in'].some(type => 
         transactionType.includes(type)
       )
       const isPositive = ['switch out', 'redemption', 'shift out'].some(type => 
         transactionType.includes(type)
       )
-      const amount = isNegative ? -parseFloat(tx.amount) : (isPositive ? parseFloat(tx.amount) : parseFloat(tx.amount))
+      const amount = isNegative ? -parseFloat(tx.amount as string) : (isPositive ? parseFloat(tx.amount as string) : parseFloat(tx.amount as string))
       
       return {
-        date: tx.date,
+        date: tx.date as string,
         amount,
-        type: tx.transaction_type
+        type: tx.transaction_type as string
       }
     })
     
@@ -348,7 +411,7 @@ export default function TestEnv() {
     
     // Calculate XIRR
     const xirrResult = calculateSchemeXIRR(
-      (txs || []).map((tx: Record<string, unknown>) => ({ date: tx.date, amount: parseFloat(tx.amount), type: tx.transaction_type })),
+      (txs || []).map((tx: Record<string, unknown>) => ({ date: (tx.date as string), amount: parseFloat(tx.amount as string), type: tx.transaction_type as string })),
       totalCurrentValue
     )
     
@@ -447,7 +510,7 @@ export default function TestEnv() {
               disabled={!selectedFolio}
             >
               <option value="">Select Scheme</option>
-              {folioSchemes.filter(fs => fs.folio === selectedFolio).map((fs: Record<string, unknown>) => (
+              {folioSchemes.filter(fs => fs.folio === selectedFolio).map((fs: FolioScheme) => (
                 <option key={fs.scheme_name} value={fs.scheme_name}>{fs.scheme_name}</option>
               ))}
             </select>
@@ -472,7 +535,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {schemeTxs.map((tx: Record<string, unknown>, i: number) => (
+                  {schemeTxs.map((tx: Transaction, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -485,7 +548,7 @@ export default function TestEnv() {
               <div className="mb-2">Current Value: <span className="font-semibold text-gray-900">₹{schemeCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {schemeXirrDebug && typeof schemeXirrDebug === 'object' && 'cashFlows' in schemeXirrDebug && Array.isArray((schemeXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
+          {schemeXirrDebug && Array.isArray(schemeXirrDebug.cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">XIRR Cash Flows</h3>
               <table className="min-w-full text-sm mb-2">
@@ -497,7 +560,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(schemeXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.map((cf: Record<string, unknown>, i: number) => (
+                  {schemeXirrDebug.cashFlows.map((cf: CashFlow, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>
@@ -529,7 +592,7 @@ export default function TestEnv() {
               onChange={e => setSelectedGoal(e.target.value)}
             >
               <option value="">Select Goal</option>
-              {goals.map((goal: Record<string, unknown>) => (
+              {goals.map((goal: Goal) => (
                 <option key={goal.id} value={goal.id}>{goal.name}</option>
               ))}
             </select>
@@ -554,7 +617,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {goalTxs.map((tx: Record<string, unknown>, i: number) => (
+                  {goalTxs.map((tx: Transaction, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -567,7 +630,7 @@ export default function TestEnv() {
               <div className="mb-2 text-gray-900">Total Current Value: <span className="font-semibold text-gray-900">₹{goalCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {goalXirrDebug && typeof goalXirrDebug === 'object' && 'cashFlows' in goalXirrDebug && Array.isArray((goalXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
+          {goalXirrDebug && Array.isArray(goalXirrDebug.cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">Goal XIRR Cash Flows</h3>
               <table className="min-w-full text-sm mb-2">
@@ -579,7 +642,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(goalXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.map((cf: Record<string, unknown>, i: number) => (
+                  {goalXirrDebug.cashFlows.map((cf: CashFlow, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>
@@ -626,7 +689,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {portfolioTxs.slice(0, 20).map((tx: Record<string, unknown>, i: number) => (
+                  {portfolioTxs.slice(0, 20).map((tx: Transaction, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{tx.date}</td>
                       <td className="px-3 py-2 text-gray-900">{tx.transaction_type}</td>
@@ -639,10 +702,10 @@ export default function TestEnv() {
               <div className="mb-2 text-gray-900">Total Current Value: <span className="font-semibold text-gray-900">₹{portfolioCurrentValue.toLocaleString()}</span></div>
             </div>
           )}
-          {portfolioXirrDebug && typeof portfolioXirrDebug === 'object' && 'cashFlows' in portfolioXirrDebug && Array.isArray((portfolioXirrDebug as { cashFlows: Record<string, unknown>[] }).cashFlows) && (
+          {portfolioXirrDebug && Array.isArray(portfolioXirrDebug.cashFlows) && (
             <div className="mb-4">
               <h3 className="font-bold text-gray-900 mb-2">Portfolio XIRR Cash Flows</h3>
-              <div className="text-sm text-gray-700 mb-2">Showing first 20 cash flows (total: {((portfolioXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.length) || 0})</div>
+              <div className="text-sm text-gray-700 mb-2">Showing first 20 cash flows (total: {portfolioXirrDebug.cashFlows.length})</div>
               <table className="min-w-full text-sm mb-2">
                 <thead>
                   <tr className="bg-gray-100">
@@ -652,7 +715,7 @@ export default function TestEnv() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(portfolioXirrDebug as { cashFlows: Record<string, unknown>[] })?.cashFlows?.slice(0, 20).map((cf: Record<string, unknown>, i: number) => (
+                  {portfolioXirrDebug.cashFlows.slice(0, 20).map((cf: CashFlow, i: number) => (
                     <tr key={i}>
                       <td className="px-3 py-2 text-gray-900">{cf.date}</td>
                       <td className="px-3 py-2 text-gray-900">{cf.type}</td>

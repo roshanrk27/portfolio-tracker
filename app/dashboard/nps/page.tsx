@@ -32,7 +32,7 @@ function formatCurrency(amount: number) {
   }).format(amount)
 }
 
-function isNpsFund(fund: unknown): fund is NpsFund {
+/*function isNpsFund(fund: unknown): fund is NpsFund {
   return (
     typeof fund === 'object' &&
     fund !== null &&
@@ -41,7 +41,7 @@ function isNpsFund(fund: unknown): fund is NpsFund {
     typeof (fund as { fund_code: unknown }).fund_code === 'string' &&
     typeof (fund as { fund_name: unknown }).fund_name === 'string'
   );
-}
+}*/
 
 export default function NPSDashboard() {
   const [loading, setLoading] = useState(true)
@@ -117,11 +117,27 @@ export default function NPSDashboard() {
   // Funds not already in holdings
   const heldFundCodes = new Set(holdings.map(h => h.fund_code))
   const availableFunds: NpsFund[] = funds.filter(f => !heldFundCodes.has(f.fund_code))
-  const filteredFunds: NpsFund[] = availableFunds.filter(f =>
-    f.fund_name.toLowerCase().includes(search.toLowerCase()) ||
-    f.fund_code.toLowerCase().includes(search.toLowerCase())
-  )
 
+  //Original code
+/*  const filteredFunds = (availableFunds.filter(f =>
+    f.fund_name.toLowerCase().includes(search.toLowerCase()) ||
+    f.fund_code.toLowerCase().includes(search.toLowerCase()))as NpsFund[]
+  )*/
+//ChatGPT fix1
+ /* const filteredFunds = availableFunds.filter(f =>
+    f.fund_name.toLowerCase().includes(search.toLowerCase()) ||
+    f.fund_code.toLowerCase().includes(search.toLowerCase())).map(f => f) as NpsFund[];*/
+
+  //ChatGPT fix2
+  const filteredFunds: NpsFund[] = availableFunds.filter(
+    (f): f is NpsFund =>
+      typeof f.fund_name === 'string' &&
+      typeof f.fund_code === 'string' &&
+      (
+        f.fund_name.toLowerCase().includes(search.toLowerCase()) ||
+        f.fund_code.toLowerCase().includes(search.toLowerCase())
+      )
+  );
   const openModal = () => {
     setShowModal(true)
     setSearch('')
@@ -414,10 +430,11 @@ export default function NPSDashboard() {
                   />
                   {!selectedFund && (
                     <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
-                      {filteredFunds.map(fund => (
+                     {(filteredFunds as NpsFund[]).map((fund: NpsFund) => (
                         <div
                           key={fund.fund_code}
-                          className={`p-2 cursor-pointer hover:bg-blue-100 ${selectedFund?.fund_code === fund.fund_code ? 'bg-blue-200' : ''}`}
+                         className=""
+                          // className={`p-2 cursor-pointer hover:bg-blue-100 ${(selectedFund?.fund_code === (fund as NpsFund).fund_code ? 'bg-blue-200' : ''}`}
                           onClick={() => setSelectedFund(fund)}
                         >
                           <span className="font-bold text-gray-900">{fund.fund_name}</span> <span className="text-xs font-mono text-blue-800 bg-blue-50 rounded px-1 ml-2">{fund.fund_code}</span>
