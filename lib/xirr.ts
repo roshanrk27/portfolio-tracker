@@ -230,4 +230,26 @@ export function calculateGoalXIRR(
   }
 
   return calculateXIRR(allCashFlows)
+}
+
+/**
+ * Get historical XIRR for a specific goal
+ * This is a wrapper around the existing getGoalXIRR function
+ */
+export async function getUserXirrByGoal(goalId: string): Promise<number> {
+  try {
+    // Import the existing function from portfolioUtils
+    const { getGoalXIRR } = await import('./portfolioUtils')
+    
+    const xirrData = await getGoalXIRR(goalId)
+    
+    if (!xirrData || !xirrData.converged) {
+      return 0
+    }
+    
+    return xirrData.xirr
+  } catch (error) {
+    console.error('Error in getUserXirrByGoal:', error)
+    return 0
+  }
 } 

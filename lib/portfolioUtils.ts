@@ -1268,4 +1268,82 @@ export async function batchCalculateXIRR(userId: string, goals: GoalData[], allM
       current_value: 0
     }))
   }
+}
+
+/**
+ * Calculate average monthly investment for a specific goal over the last 12 months
+ */
+export async function getAverageMonthlyInvestmentByGoal(goalId: string): Promise<number> {
+  try {
+    // Get goal details to get user_id
+    const { data: goal, error: goalError } = await supabaseServer
+      .from('goals')
+      .select('user_id')
+      .eq('id', goalId)
+      .single()
+
+    if (goalError) {
+      console.error('Error fetching goal for average monthly investment:', goalError)
+      return 0
+    }
+
+    // Get goal mappings
+    const { data: mappings, error: mappingError } = await supabaseServer
+      .from('goal_scheme_mapping')
+      .select('scheme_name, folio')
+      .eq('goal_id', goalId)
+
+    if (mappingError) {
+      console.error('Error fetching goal mappings for average monthly investment:', mappingError)
+      return 0
+    }
+
+    if (!mappings || mappings.length === 0) {
+      return 0
+    }
+
+    // Calculate date 12 months ago
+    const twelveMonthsAgo = new Date()
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
+
+    // Get transactions for mapped schemes over the last 12 months
+    const { data: transactions, error } = await supabaseServer
+      .from('transactions')
+      .select('date, amount')
+      .eq('user_id', goal.user_id)
+      .gte('date', twelveMonthsAgo.toISOString().split('T')[0])
+      .in('scheme_name', mappings.map(m => m.scheme_name))
+      .in('folio', mappings.map(m => m.folio))
+      .order('date', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching transactions for goal average monthly investment:', error)
+      return 0
+    }
+
+    if (!transactions || transactions.length === 0) {
+      return 0
+    }
+
+    // Group transactions by month and sum amounts
+    const monthlyTotals: Record<string, number> = {}
+    
+    for (const transaction of transactions) {
+      const monthKey = transaction.date.substring(0, 7) // YYYY-MM format
+      const amount = parseFloat(transaction.amount || '0')
+      
+      if (amount > 0) { // Only count positive amounts (investments)
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + amount
+      }
+    }
+
+    // Calculate average
+    const totalAmount = Object.values(monthlyTotals).reduce((sum, amount) => sum + amount, 0)
+    const numberOfMonths = Object.keys(monthlyTotals).length
+
+    return numberOfMonths > 0 ? totalAmount / numberOfMonths : 0
+  } catch (error) {
+    console.error('Error in getAverageMonthlyInvestmentByGoal:', error)
+    return 0
+  }
 } 

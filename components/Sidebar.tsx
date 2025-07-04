@@ -13,6 +13,7 @@ export default function Sidebar() {
     { href: '/dashboard/portfolio', label: 'Mutual Funds', icon: '💼' },
     { href: '/dashboard/stocks', label: 'Stocks', icon: '📈' },
     { href: '/dashboard/nps', label: 'NPS', icon: '🏛️' },
+    { href: '/dashboard/goals/simulator', label: 'Goal Simulator', icon: '🎯' },
   ]
 
   useEffect(() => {

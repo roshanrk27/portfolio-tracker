@@ -382,14 +382,26 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
               <p className="text-gray-600 mt-2 text-lg">{goal.description}</p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="text-neutral-500 hover:text-neutral-800 p-2 rounded-full hover:bg-neutral-100 transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                onClose()
+                // Navigate to simulator page with goalId
+                window.location.href = `/dashboard/goals/simulator?goalId=${goal.id}`
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors text-sm font-medium"
+            >
+              Simulate Plan
+            </button>
+            <button
+              onClick={onClose}
+              className="text-neutral-500 hover:text-neutral-800 p-2 rounded-full hover:bg-neutral-100 transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {error && (
