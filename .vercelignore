@@ -1,0 +1,2 @@
+# Exclude Supabase Edge Functions from Vercel builds
+supabase/functions/ 
