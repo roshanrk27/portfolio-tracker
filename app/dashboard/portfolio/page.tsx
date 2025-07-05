@@ -225,9 +225,11 @@ export default function PortfolioDashboard() {
               )}
             </div>
             <div className="flex items-center space-x-4">
+              {/* RefreshNavButton temporarily hidden due to automated NAV refresh
               <RefreshNavButton 
                 onRefresh={handleNavRefresh}
               />
+              */}
               <button
                 onClick={() => router.push('/upload')}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
