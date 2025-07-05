@@ -1,4 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Portfolio Tracker
+
+A comprehensive portfolio tracking application built with Next.js, Supabase, and React Query. Track your mutual funds, stocks, NPS investments, and financial goals with real-time data and intelligent caching.
+
+## 🚀 Features
+
+- **Portfolio Management**: Track mutual funds, stocks, and NPS investments
+- **Goal Tracking**: Set and monitor financial goals with progress tracking
+- **Real-time Data**: Live stock prices with automatic INR conversion
+- **Intelligent Caching**: Smart caching system with weekend-aware logic
+- **XIRR Calculations**: Advanced return calculations for investments
+- **Responsive Design**: Modern UI with mobile-first approach
+
+## 📈 Stock Price System
+
+The application includes a sophisticated stock price caching and INR conversion system:
+
+- **Yahoo Finance Integration**: Real-time stock price fetching
+- **Automatic INR Conversion**: USD to INR conversion with live exchange rates
+- **Smart Caching**: 30-minute cache on weekdays, 24-hour on weekends
+- **Fallback Mechanisms**: Graceful degradation when APIs fail
+- **Performance Optimized**: Batch processing and efficient caching
+
+📖 **Detailed Documentation**: See [STOCK_PRICE_CACHING_DOCUMENTATION.md](./STOCK_PRICE_CACHING_DOCUMENTATION.md) for complete system architecture and implementation details.
+
+## 🛠️ Tech Stack
+
+- **Frontend**: Next.js 15, React, TypeScript
+- **Backend**: Supabase (PostgreSQL, Auth, Functions)
+- **Data Fetching**: React Query (TanStack Query)
+- **Styling**: Tailwind CSS
+- **Stock Data**: Yahoo Finance API
+- **Deployment**: Vercel
 
 ## Getting Started
 
@@ -16,18 +48,32 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file with your Supabase credentials:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+## Database Setup
+
+Run the SQL scripts in the project root to set up the database schema:
+
+1. `stocks_schema.sql` - Stock investments table
+2. `stock_prices_cache.sql` - Stock price caching table
+3. `goals_schema.sql` - Financial goals table
+4. `user_profiles_schema.sql` - User profiles table
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
+To learn more about the technologies used:
 
 - [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- [Supabase Documentation](https://supabase.com/docs) - learn about Supabase features.
+- [React Query Documentation](https://tanstack.com/query/latest) - learn about React Query.
 
 ## Deploy on Vercel
 

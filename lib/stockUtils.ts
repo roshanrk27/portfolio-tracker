@@ -10,50 +10,70 @@ export interface StockPrice {
   timestamp: string
 }
 
+interface StockPriceData {
+  price: number | null
+  currency: string
+  exchangeRate?: number
+  originalPrice?: number
+  originalCurrency?: string
+}
+
 export interface StockPricesResponse {
   success: boolean
-  prices: Record<string, {
-    price: number | null
-    currency: string
-    exchangeRate?: number
-    originalPrice?: number
-    originalCurrency?: string
-  }>
+  prices: Record<string, StockPriceData>
   timestamp: string
+  stale: boolean
+  fallback?: boolean
+}
+
+// Exchange to Yahoo Finance symbol mapping
+const EXCHANGE_MAPPING: Record<string, string> = {
+  'NSE': '.NS',      // India - National Stock Exchange
+  'BSE': '.BO',      // India - Bombay Stock Exchange  
+  'NASDAQ': '',      // US - NASDAQ (no suffix)
+  'NYSE': '',        // US - NYSE (no suffix)
+  'LSE': '.L',       // UK - London Stock Exchange
+  'TSE': '.T',       // Japan - Tokyo Stock Exchange
+  'ASX': '.AX',      // Australia - Australian Securities Exchange
+  'TSX': '.TO',      // Canada - Toronto Stock Exchange
+  'HKEX': '.HK'      // Hong Kong - Hong Kong Stock Exchange
+}
+
+// Function to convert stock_code + exchange to Yahoo Finance symbol
+function getYahooSymbol(stockCode: string, exchange: string): string {
+  const suffix = EXCHANGE_MAPPING[exchange] || ''
+  return stockCode + suffix
 }
 
 // Fetch single stock price
 export async function fetchStockPrice(symbol: string, exchange?: string): Promise<StockPrice | null> {
   try {
-    // Use POST with a single symbol in the array
-    const response = await fetch('/api/stock-prices', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ symbols: [symbol], exchanges: exchange ? [exchange] : undefined })
-    })
+    // Convert to Yahoo Finance symbol format
+    const yahooSymbol = getYahooSymbol(symbol, exchange || 'NSE')
+    
+    // Use GET request with symbols parameter
+    const response = await fetch(`/api/stock-prices?symbols=${encodeURIComponent(yahooSymbol)}`)
 
     if (!response.ok) {
-      console.error(`Failed to fetch stock price for ${symbol}:`, response.status)
+      console.error(`Failed to fetch stock price for ${yahooSymbol}:`, response.status)
       return null
     }
 
     const data = await response.json()
 
     if (!data.success) {
-      console.error(`API error for ${symbol}:`, data.error)
+      console.error(`API error for ${yahooSymbol}:`, data.error)
       return null
     }
 
-    // The batch API returns prices keyed by symbol
-    const priceData = data.prices[symbol]
+    // The API returns prices keyed by symbol
+    const priceData = data.prices[yahooSymbol]
     if (!priceData) {
       return null
     }
 
     return {
-      symbol: symbol,
+      symbol: yahooSymbol,
       price: priceData.price,
       currency: priceData.currency,
       exchangeRate: priceData.exchangeRate,
@@ -70,7 +90,13 @@ export async function fetchStockPrice(symbol: string, exchange?: string): Promis
 // Fetch multiple stock prices
 export async function fetchStockPrices(symbols: string[], exchanges?: string[]): Promise<StockPricesResponse | null> {
   try {
-    const BATCH_SIZE = 5
+    // Convert symbols to Yahoo Finance format
+    const yahooSymbols = symbols.map((symbol, index) => {
+      const exchange = exchanges?.[index] || 'NSE'
+      return getYahooSymbol(symbol, exchange)
+    })
+    
+    const BATCH_SIZE = 10 // Increased batch size since we're using cached data
     let allPrices: Record<string, {
       price: number | null
       currency: string
@@ -80,17 +106,16 @@ export async function fetchStockPrices(symbols: string[], exchanges?: string[]):
     }> = {}
     let timestamp = new Date().toISOString()
     
-    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-      const batchSymbols = symbols.slice(i, i + BATCH_SIZE)
-      const batchExchanges = exchanges ? exchanges.slice(i, i + BATCH_SIZE) : undefined
+    for (let i = 0; i < yahooSymbols.length; i += BATCH_SIZE) {
+      const batchSymbols = yahooSymbols.slice(i, i + BATCH_SIZE)
       
       try {
-        const response = await fetch('/api/stock-prices', {
-          method: 'POST',
+        const symbolsParam = batchSymbols.map(s => encodeURIComponent(s)).join(',')
+        const response = await fetch(`/api/stock-prices?symbols=${symbolsParam}`, {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ symbols: batchSymbols, exchanges: batchExchanges })
         })
         
         if (!response.ok) {
@@ -106,8 +131,23 @@ export async function fetchStockPrices(symbols: string[], exchanges?: string[]):
           continue
         }
         
-        allPrices = { ...allPrices, ...data.prices }
+        // Map Yahoo symbols back to original symbols for backward compatibility
+        const mappedPrices: Record<string, StockPriceData> = {}
+        for (const [yahooSymbol, priceData] of Object.entries(data.prices)) {
+          // Find the original symbol that maps to this Yahoo symbol
+          const originalIndex = yahooSymbols.indexOf(yahooSymbol)
+          if (originalIndex !== -1) {
+            mappedPrices[symbols[originalIndex]] = priceData as StockPriceData
+          }
+        }
+        
+        allPrices = { ...allPrices, ...mappedPrices }
         timestamp = data.timestamp || timestamp
+        
+        // Track if any batch had stale data
+        if (data.stale || data.fallback) {
+          console.log('[STOCK-PRICES] Using stale/fallback data from API')
+        }
       } catch (batchError) {
         console.error('Error in batch request:', batchError)
         // Continue with next batch instead of failing completely
@@ -115,11 +155,20 @@ export async function fetchStockPrices(symbols: string[], exchanges?: string[]):
       }
     }
     
-    return { success: true, prices: allPrices, timestamp }
+    // Check if any of the batches had stale data
+    const hasStaleData = Object.keys(allPrices).length > 0
+    
+    return { 
+      success: true, 
+      prices: allPrices, 
+      timestamp,
+      stale: hasStaleData, // Indicate if we're using any cached/stale data
+      fallback: hasStaleData // Same as stale for now
+    }
   } catch (error) {
     console.error('Error fetching stock prices:', error)
     // Return empty prices instead of null to prevent UI crashes
-    return { success: true, prices: {}, timestamp: new Date().toISOString() }
+          return { success: true, prices: {}, timestamp: new Date().toISOString(), stale: false }
   }
 }
 

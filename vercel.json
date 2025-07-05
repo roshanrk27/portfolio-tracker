@@ -7,6 +7,10 @@
     {
       "path": "/api/refresh-nps-nav", 
       "schedule": "0 19 * * 1"
+    },
+    {
+      "path": "/api/cron/prefetch-stock-prices",
+      "schedule": "*/30 * * * *"
     }
   ]
 } 

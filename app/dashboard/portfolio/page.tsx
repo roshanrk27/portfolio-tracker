@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
-import RefreshNavButton from '@/components/RefreshNavButton'
 
 interface PortfolioHolding {
   id: string
@@ -91,46 +90,11 @@ export default function PortfolioDashboard() {
     }).format(amount)
   }
 
-
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-IN')
   }
 
-  const handleNavRefresh = async () => {
-    // Refresh portfolio data after NAV update
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session) {
-      try {
-        const [portfolioData, summaryData, latestNavDateData, schemeXirrArr, mfXirrData] = await Promise.all([
-          getCurrentPortfolio(session.user.id),
-          getPortfolioSummary(session.user.id),
-          getLatestNavDate(),
-          getSchemeXIRRs(session.user.id),
-          getPortfolioXIRR(session.user.id)
-        ])
-        
-        setPortfolio(portfolioData)
-        setSummary(summaryData)
-        setLatestNavDate(latestNavDateData)
-        // Map XIRR results for quick lookup
-        const xirrMap: Record<string, string> = {}
-        for (const x of schemeXirrArr) {
-          xirrMap[`${x.scheme_name}__${x.folio}`] = x.formattedXIRR
-        }
-        setSchemeXirrMap(xirrMap)
-        setXirrLoading(false)
-        setMfXirr(mfXirrData ? {
-          formattedXIRR: mfXirrData.formattedXIRR,
-          xirr: mfXirrData.xirr,
-          converged: mfXirrData.converged
-        } : null)
-              } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-          setError(errorMessage)
-        }
-    }
-  }
+
 
   // Helper to get XIRR value for a holding (number or null)
   const getXirrValue = (holding: PortfolioHolding) => {

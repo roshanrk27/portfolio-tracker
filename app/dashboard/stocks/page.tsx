@@ -6,6 +6,8 @@ import StockForm from '@/components/StockForm'
 import { fetchStockPrices, fetchStockPrice, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
 import { useState as useMenuState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import StaleDataIndicator from '@/components/StaleDataIndicator'
+
 
 interface Stock {
   id: string
@@ -36,6 +38,7 @@ export default function StocksPage() {
   const [openMenuId, setOpenMenuId] = useMenuState<string | null>(null)
   const menuRefs = useRef<{ [id: string]: HTMLDivElement | null }>({})
   const [sortState, setSortState] = useState<{ key: 'alphabetical' | 'value', direction: 'asc' | 'desc' }>({ key: 'alphabetical', direction: 'asc' })
+  const [isDataStale, setIsDataStale] = useState(false)
 
   const queryClient = useQueryClient()
 
@@ -62,38 +65,51 @@ export default function StocksPage() {
     refetchOnWindowFocus: false,
   })
 
-  // Separate query for stock prices with caching
+  // React Query for stock prices
   const {
-    data: stockPrices = {},
-    isLoading: pricesLoading
-  } = useQuery<Record<string, {
-    price: number | null
-    currency: string
-    exchangeRate?: number
-    originalPrice?: number
-    originalCurrency?: string
-  }>>({
+    data: stockPricesResponse,
+    isLoading: stockPricesLoading
+  } = useQuery({
     queryKey: ['stockPrices'],
     queryFn: async () => {
-      if (!stocks || stocks.length === 0) return {}
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
       
-      const validStocks = stocks.filter((stock: Stock) =>
-        typeof stock.stock_code === 'string' && stock.stock_code.trim() !== '' &&
-          typeof stock.exchange === 'string' && stock.exchange.trim() !== ''
-      )
+      const { data: stocks, error } = await supabase
+        .from('stocks')
+        .select('*')
+        .eq('user_id', session.user.id)
       
-      if (validStocks.length === 0) return {}
+      if (error || !stocks) {
+        console.error('Error loading stocks:', error)
+        return { success: true, prices: {}, timestamp: new Date().toISOString(), stale: false }
+      }
+
+      const validStocks = stocks.filter((stock: Stock) => stock.stock_code && stock.exchange)
+      if (validStocks.length === 0) return { success: true, prices: {}, timestamp: new Date().toISOString(), stale: false }
       
       const symbols = validStocks.map((stock: Stock) => stock.stock_code)
       const exchanges = validStocks.map((stock: Stock) => stock.exchange === 'US' ? 'NASDAQ' : stock.exchange)
       const pricesResponse = await fetchStockPrices(symbols, exchanges)
       
-      return pricesResponse?.prices || {}
+      // Update stale data state
+      if (pricesResponse?.stale) {
+        setIsDataStale(true)
+        console.log('[STOCKS] Using stale data from cache')
+      } else {
+        setIsDataStale(false)
+      }
+      
+      return pricesResponse || { success: true, prices: {}, timestamp: new Date().toISOString(), stale: false }
     },
     enabled: stocks.length > 0,
-    staleTime: 1000 * 60 * 2, // 2 minutes for prices
+    staleTime: 1000 * 60 * 30, // 30 minutes for prices
+    gcTime: 1000 * 60 * 30, // 30 minutes garbage collection time
     refetchOnWindowFocus: false,
   })
+
+  // Extract prices from response
+  const stockPrices: Record<string, { price: number | null; currency: string; exchangeRate?: number; originalPrice?: number; originalCurrency?: string }> = stockPricesResponse?.prices || {}
 
   // Combine stocks with prices
   const stocksWithValues: StockWithValue[] = stocks.map((stock: Stock) => {
@@ -334,20 +350,23 @@ export default function StocksPage() {
       <div className="container mx-auto p-6">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-start">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Stocks</h1>
-              <p className="text-gray-600">Your current stock investments</p>
+              <p className="text-gray-600">Track your stock investments</p>
             </div>
-            <button
-              onClick={() => setShowStockForm(true)}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Stock
-            </button>
+            <div className="flex items-center space-x-4">
+              <StaleDataIndicator isStale={isDataStale} />
+              <button
+                onClick={() => setShowStockForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Stock
+              </button>
+            </div>
           </div>
         </div>
 
@@ -365,11 +384,11 @@ export default function StocksPage() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-600">Total Stock Portfolio Value</p>
                     <p className="text-2xl font-bold text-gray-900">
-                      {pricesLoading ? 'Loading...' : formatStockValue(getTotalPortfolioValue())}
+                      {stockPricesLoading ? 'Loading...' : formatStockValue(getTotalPortfolioValue())}
                     </p>
                   </div>
                 </div>
-                {pricesLoading && (
+                {stockPricesLoading && (
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                 )}
               </div>
@@ -441,7 +460,7 @@ export default function StocksPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          {pricesLoading ? (
+                          {stockPricesLoading ? (
                             <div className="animate-pulse bg-gray-200 h-4 w-20 rounded"></div>
                           ) : (
                             formatStockValue(stock.currentValue || 0)
@@ -450,7 +469,7 @@ export default function StocksPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
-                          {pricesLoading ? (
+                          {stockPricesLoading ? (
                             <div className="animate-pulse bg-gray-200 h-4 w-16 rounded"></div>
                           ) : (
                             formatStockPrice(stock.currentPrice || null, 'INR')

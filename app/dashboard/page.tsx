@@ -9,8 +9,6 @@ import GoalCard from '@/components/GoalCard'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback } from 'react';
 
-
-
 interface StockSummary {
   totalStocks: number
   totalStockValue: number
@@ -39,15 +37,6 @@ interface Goal {
 }
 
 
-
-interface PriceData {
-  price: number
-  currency: string
-  exchangeRate?: number
-  originalPrice?: number
-  originalCurrency?: string
-  error?: string
-}
 
 interface GoalXirrResult {
   xirr: number;
@@ -81,7 +70,7 @@ async function getNpsValue(userId: string): Promise<number> {
   return total;
 }
 
-async function getStockSummary(userId: string, stockPrices?: Record<string, number>): Promise<StockSummary> {
+async function getStockSummary(userId: string): Promise<StockSummary> {
   try {
     // Get all stocks for the user
     const { data: stocks, error } = await supabase
@@ -110,20 +99,46 @@ async function getStockSummary(userId: string, stockPrices?: Record<string, numb
       }
     }
 
+    // Convert stocks to Yahoo Finance symbols
+    const yahooSymbols = stocks.map(stock => {
+      const suffix = stock.exchange === 'NSE' ? '.NS' : 
+                   stock.exchange === 'BSE' ? '.BO' : 
+                   stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? '' : ''
+      return stock.stock_code + suffix
+    })
+
+    // Get prices from stock_prices_cache using price_inr
+    const { data: cachedPrices, error: cacheError } = await supabase
+      .from('stock_prices_cache')
+      .select('symbol, price_inr')
+      .in('symbol', yahooSymbols)
+
+    if (cacheError) {
+      console.error('Error fetching cached prices:', cacheError)
+      return {
+        totalStocks: stocks.length,
+        totalStockValue: 0,
+        totalInvested: 0,
+        totalReturn: 0,
+        totalReturnPercentage: 0
+      }
+    }
+
+    // Calculate total value using price_inr
     let totalStockValue = 0
     let totalInvested = 0
 
-    // Use cached prices only - no individual fetching
     for (const stock of stocks) {
-      // Match the key format used in React Query (US -> NASDAQ conversion)
-      const exchangeForKey = stock.exchange === 'US' ? 'NASDAQ' : stock.exchange
-      const key = `${stock.stock_code}|${exchangeForKey}`
-      const price = stockPrices?.[key]
+      const yahooSymbol = stock.exchange === 'NSE' ? stock.stock_code + '.NS' : 
+                         stock.exchange === 'BSE' ? stock.stock_code + '.BO' : 
+                         stock.stock_code
       
-      if (price) {
-        const currentValue = stock.quantity * price
+      const cachedPrice = cachedPrices?.find(p => p.symbol === yahooSymbol)
+      
+      if (cachedPrice?.price_inr) {
+        const currentValue = stock.quantity * cachedPrice.price_inr
         totalStockValue += currentValue
-        // For now, use current value as invested amount since we don't have purchase price
+        // For now, use current value as invested amount since we don't track purchase price
         // In a real implementation, you'd want to track purchase price separately
         totalInvested += currentValue
       }
@@ -209,86 +224,6 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
-  // React Query for Stock Prices (Dashboard)
-  const {
-    data: dashboardStockPrices = {},
-    isLoading: dashboardStockPricesLoading,
-    refetch: refetchDashboardStockPrices
-  } = useQuery<Record<string, number>>({
-    queryKey: ['dashboardStockPrices', userId],
-    queryFn: async () => {
-      if (!userId) throw new Error('No user ID');
-      
-      // Get all stocks for the user
-      const { data: stocks, error } = await supabase
-        .from('stocks')
-        .select('*')
-        .eq('user_id', userId)
-      
-      if (error || !stocks || stocks.length === 0) {
-        return {}
-      }
-
-      // Collect unique stocks for batch fetching
-      const uniqueStocks: { symbol: string; exchange: string }[] = []
-      const seen = new Set<string>()
-      
-      for (const stock of stocks) {
-        const key = `${stock.stock_code}|${stock.exchange}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          uniqueStocks.push({ 
-            symbol: stock.stock_code, 
-            exchange: stock.exchange === 'US' ? 'NASDAQ' : stock.exchange 
-          })
-        }
-      }
-
-      if (uniqueStocks.length === 0) {
-        return {}
-      }
-
-      // Batch fetch prices (max 5 per batch)
-      const prices: Record<string, number> = {}
-      for (let i = 0; i < uniqueStocks.length; i += 5) {
-        const batch = uniqueStocks.slice(i, i + 5)
-        try {
-          const res = await fetch('/api/stock-prices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              symbols: batch.map(s => s.symbol),
-              exchanges: batch.map(s => s.exchange)
-            })
-          })
-          
-          if (res.ok) {
-            const data = await res.json()
-            if (data.prices) {
-              for (const [symbol, priceObjRaw] of Object.entries(data.prices)) {
-                const priceObj = priceObjRaw as PriceData
-                const idx = batch.findIndex(s => s.symbol === symbol)
-                if (idx !== -1) {
-                  const key = `${symbol}|${batch[idx].exchange}`
-                  if (priceObj && typeof priceObj.price === 'number') {
-                    prices[key] = priceObj.price
-                  }
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error fetching stock prices:', err)
-        }
-      }
-      
-      return prices
-    },
-    enabled: !!userId,
-    staleTime: 1000 * 60 * 2, // 2 minutes for prices
-    refetchOnWindowFocus: false,
-  });
-
   // React Query for Goals with Details
   const {
     data: goals = [],
@@ -333,10 +268,6 @@ export default function Dashboard() {
     refetchOnWindowFocus: false,
   });
 
-
-
-
-
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -349,17 +280,14 @@ export default function Dashboard() {
     checkAuth()
   }, [router])
 
-  // Fetch all unique mapped stock prices for all goals
-
-
-  const loadDashboardData = useCallback(async (stockPricesOverride?: Record<string, number>) => {
+  const loadDashboardData = useCallback(async () => {
     console.log('[DEBUG_ROSHAN] loadDashboardData called')
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
       setStockLoading(true)
       console.log('[DEBUG_ROSHAN_LOAD_STOCK_SUMMARY] loading stock data')
-      const stockData = await getStockSummary(session.user.id, stockPricesOverride || dashboardStockPrices)
+      const stockData = await getStockSummary(session.user.id)
       console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] stockData:', stockData)
       setStockSummary(stockData)
       setStockLoading(false)
@@ -368,15 +296,15 @@ export default function Dashboard() {
       console.log('[DEBUG_ROSHAN] error in loadDashboardData:', errorMessage)
       setStockLoading(false)
     }
-  }, [dashboardStockPrices]);
+  }, []);
 
-    // useEffect for loading dashboard data when stock prices are available
+  // useEffect for loading dashboard data when user is available
   useEffect(() => {
-    if (dashboardStockPricesLoading === false) {
-      console.log('[DEBUG_ROSHAN] stock prices loaded, updating dashboard data')
-        loadDashboardData()
+    if (userId) {
+      console.log('[DEBUG_ROSHAN] user available, loading dashboard data')
+      loadDashboardData()
     }
-  }, [dashboardStockPricesLoading, dashboardStockPrices, loadDashboardData])
+  }, [userId, loadDashboardData])
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
@@ -447,8 +375,6 @@ export default function Dashboard() {
     }).format(amount)
   }
 
-
-
   const handleNavRefresh = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -456,7 +382,6 @@ export default function Dashboard() {
         await Promise.all([
           refetchPortfolioSummary(), // Invalidate and refetch MF value
           refetchNpsValue(), // Invalidate and refetch NPS value
-          refetchDashboardStockPrices(), // Invalidate and refetch stock prices
           refetchGoals(), // Invalidate and refetch goals
           refetchXIRR() // Invalidate and refetch XIRR data
         ]);
@@ -540,7 +465,7 @@ export default function Dashboard() {
           ) : null}
 
           {/* Stock Value Card */}
-          {stockLoading || dashboardStockPricesLoading ? (
+          {stockLoading ? (
             <div className="bg-purple-50 border-l-4 border-purple-500 rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-purple-100 rounded-lg">
@@ -657,8 +582,6 @@ export default function Dashboard() {
                   <GoalCard
                     key={goal.id}
                     goal={goal}
-                    stockPrices={dashboardStockPrices}
-                    stockPricesLoading={dashboardStockPricesLoading}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}

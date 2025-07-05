@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabaseClient'
 import GoalMappingModal from './GoalMappingModal'
 import GoalEditModal from './GoalEditModal'
 import GoalDetailsModal from './GoalDetailsModal'
@@ -30,22 +32,66 @@ interface GoalCardProps {
   onEdit?: (goal: Goal) => void
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
-  stockPrices?: Record<string, number>
-  stockPricesLoading?: boolean
 }
 
-export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged, stockPrices, stockPricesLoading }: GoalCardProps) {
+export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
 
+  // React Query to fetch stock prices for mapped stocks
+  const {
+    data: stockPrices = {},
+    isLoading: stockPricesLoading
+  } = useQuery({
+    queryKey: ['goalStockPrices', goal.id, goal.mappedStocks],
+    queryFn: async () => {
+      if (!goal.mappedStocks || goal.mappedStocks.length === 0) {
+        return {}
+      }
+
+      // Convert stocks to Yahoo Finance symbols
+      const yahooSymbols = goal.mappedStocks.map(stock => {
+        const suffix = stock.exchange === 'NSE' ? '.NS' : 
+                     stock.exchange === 'BSE' ? '.BO' : 
+                     stock.exchange === 'NASDAQ' || stock.exchange === 'NYSE' ? '' : ''
+        return stock.stock_code + suffix
+      })
+
+      // Get prices from stock_prices_cache using price_inr
+      const { data: cachedPrices, error } = await supabase
+        .from('stock_prices_cache')
+        .select('symbol, price_inr')
+        .in('symbol', yahooSymbols)
+
+      if (error) {
+        console.error('Error fetching cached prices for goal:', error)
+        return {}
+      }
+
+      // Create a map of original stock codes to prices
+      const prices: Record<string, number> = {}
+      for (const stock of goal.mappedStocks) {
+        const yahooSymbol = stock.exchange === 'NSE' ? stock.stock_code + '.NS' : 
+                           stock.exchange === 'BSE' ? stock.stock_code + '.BO' : 
+                           stock.stock_code
+        const cachedPrice = cachedPrices?.find(p => p.symbol === yahooSymbol)
+        if (cachedPrice?.price_inr) {
+          prices[stock.stock_code] = cachedPrice.price_inr
+        }
+      }
+
+      return prices
+    },
+    enabled: !!goal.mappedStocks && goal.mappedStocks.length > 0,
+    staleTime: 1000 * 60 * 30, // 30 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes garbage collection time
+    refetchOnWindowFocus: false,
+  })
+
   const liveStockValue = (goal.mappedStocks || []).reduce((total, stock) => {
-    if (!stockPrices) return total
-    // Normalize exchange code to match dashboard format
-    const normalizedExchange = stock.exchange === 'US' ? 'NASDAQ' : stock.exchange
-    const key = `${stock.stock_code}|${normalizedExchange}`
-    const price = stockPrices[key]
+    const price = stockPrices[stock.stock_code]
     if (price) {
       return total + stock.quantity * price
     }
