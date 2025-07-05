@@ -10,36 +10,21 @@ interface NavData {
 export async function POST(req: NextRequest) {
   const logs: string[] = []
   try {
-    // Get access token from Authorization header
-    const authHeader = req.headers.get('authorization')
-    const token = authHeader?.split(' ')[1]
-    if (!token) {
-      logs.push('No access token provided')
+    // API key authentication
+    const apiKey = req.headers.get('x-api-key')
+    if (apiKey !== process.env.NAV_REFRESH_API_KEY) {
+      logs.push('Invalid API key')
       return NextResponse.json({ success: false, logs }, { status: 401 })
     }
-    // Create Supabase client as the user
+
+    logs.push('API key authenticated')
+    
+    // Create Supabase client with service role key for automated access
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    // Auth check
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) {
-      logs.push('Not authenticated')
-      return NextResponse.json({ success: false, logs }, { status: 401 })
-    }
-    // Check admin
-    const { data: profile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-    if (profileError || profile?.role !== 'admin') {
-      logs.push('Not authorized')
-      return NextResponse.json({ success: false, logs }, { status: 403 })
-    }
-    logs.push('Admin authenticated')
+
     // Get all fund codes in our DB
     const { data: fundRows, error: fundError } = await supabase
       .from('nps_funds')
@@ -50,6 +35,7 @@ export async function POST(req: NextRequest) {
     }
     const fundCodes = (fundRows || []).map(f => f.fund_code)
     logs.push(`Found ${fundCodes.length} fund codes`)
+    
     // For each fund_code, fetch NAV from npsnav.in/api/detailed/{fund_code}
     let upsertCount = 0
     const sampleNavs: NavData[] = []

@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/refresh-nav",
+      "schedule": "0 18 * * 1-5"
+    },
+    {
+      "path": "/api/refresh-nps-nav", 
+      "schedule": "0 19 * * 1"
+    }
+  ]
+} 
