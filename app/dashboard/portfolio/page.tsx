@@ -263,7 +263,7 @@ export default function PortfolioDashboard() {
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-xl font-semibold text-gray-900">Current Holdings</h2>
             <p className="text-sm text-gray-600 mt-1">
-              {portfolio.length} holdings • Last updated: {portfolio.length > 0 ? formatDate(portfolio[0]?.last_nav_update_date || '') : 'N/A'}
+              {portfolio.length} holdings
             </p>
           </div>
           

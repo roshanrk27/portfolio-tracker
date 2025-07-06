@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import StockForm from '@/components/StockForm'
 import { fetchStockPrices, fetchStockPrice, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
@@ -41,6 +41,36 @@ export default function StocksPage() {
   const [isDataStale, setIsDataStale] = useState(false)
 
   const queryClient = useQueryClient()
+
+  // Handle clicking outside menu to dismiss
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openMenuId && menuRefs.current[openMenuId]) {
+        const menuElement = menuRefs.current[openMenuId]
+        const target = event.target as Node
+        
+        // Only dismiss if click is outside the menu and not on a table header
+        if (menuElement && !menuElement.contains(target)) {
+          const targetElement = target as Element
+          const isTableHeader = targetElement.closest('th')
+          const isMenuButton = targetElement.closest('button')
+          
+          // Don't dismiss if clicking on table headers or menu buttons
+          if (!isTableHeader && !isMenuButton) {
+            setOpenMenuId(null)
+          }
+        }
+      }
+    }
+
+    if (openMenuId) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [openMenuId])
 
   // Separate query for stock data (database)
   const {
@@ -305,8 +335,14 @@ export default function StocksPage() {
   const sortedStocks = [...stocksWithValues]
   if (sortState.key === 'value') {
     sortedStocks.sort((a: StockWithValue, b: StockWithValue) => {
-      const aVal = a.currentValue || 0
-      const bVal = b.currentValue || 0
+      const aVal = a.currentValue
+      const bVal = b.currentValue
+      
+      // Handle undefined values - put them at the bottom
+      if (aVal === undefined && bVal === undefined) return 0
+      if (aVal === undefined) return 1
+      if (bVal === undefined) return -1
+      
       return sortState.direction === 'asc' ? aVal - bVal : bVal - aVal
     })
   } else {
@@ -475,7 +511,7 @@ export default function StocksPage() {
                             formatStockPrice(stock.currentPrice || null, 'INR')
                           )}
                         </div>
-                        {stock.originalPrice && stock.originalCurrency && (
+                        {stock.originalPrice && stock.originalCurrency && stock.originalCurrency !== 'INR' && (
                           <div className="text-xs text-gray-500">
                             {formatStockPrice(stock.originalPrice, stock.originalCurrency)}
                           </div>

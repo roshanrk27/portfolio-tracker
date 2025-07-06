@@ -70,6 +70,18 @@ async function getNpsValue(userId: string): Promise<number> {
   return total;
 }
 
+async function getLatestNpsNavDate(): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('nps_nav')
+    .select('nav_date')
+    .order('nav_date', { ascending: false })
+    .limit(1)
+    .single();
+  
+  if (error || !data) return null;
+  return data.nav_date;
+}
+
 async function getStockSummary(userId: string): Promise<StockSummary> {
   try {
     // Get all stocks for the user
@@ -172,6 +184,7 @@ export default function Dashboard() {
   const [stockLoading, setStockLoading] = useState(true)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
+  const [latestNpsNavDate, setLatestNpsNavDate] = useState<string | null>(null)
   const router = useRouter()
   
   // Fetch user session and NAV date for cache key
@@ -187,6 +200,8 @@ export default function Dashboard() {
       setUserId(session.user.id);
       const navDate = await getLatestNavDate();
       setLatestNavDate(navDate);
+      const npsNavDate = await getLatestNpsNavDate();
+      setLatestNpsNavDate(npsNavDate);
     };
     fetchSessionAndNavDate();
   }, [router]);
@@ -194,8 +209,7 @@ export default function Dashboard() {
   // React Query for MF Value (Portfolio Summary)
   const {
     data: portfolioSummary,
-    isLoading: portfolioLoadingRQ,
-    refetch: refetchPortfolioSummary
+    isLoading: portfolioLoadingRQ
   } = useQuery({
     queryKey: ['portfolioSummary', userId, latestNavDate],
     queryFn: async () => {
@@ -212,8 +226,7 @@ export default function Dashboard() {
   // React Query for NPS Value
   const {
     data: npsValue,
-    isLoading: npsLoading,
-    refetch: refetchNpsValue
+    isLoading: npsLoading
   } = useQuery<number, Error>({
     queryKey: ['npsValue', userId, latestNavDate],
     queryFn: async () => {
@@ -375,22 +388,7 @@ export default function Dashboard() {
     }).format(amount)
   }
 
-  const handleNavRefresh = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await Promise.all([
-          refetchPortfolioSummary(), // Invalidate and refetch MF value
-          refetchNpsValue(), // Invalidate and refetch NPS value
-          refetchGoals(), // Invalidate and refetch goals
-          refetchXIRR() // Invalidate and refetch XIRR data
-        ]);
-      }
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      console.error('Error refreshing data:', errorMessage);
-    }
-  };
+  // Removed unused handleNavRefresh function
 
   if (loading) {
     return (
@@ -449,18 +447,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-              <div className="absolute top-2 right-2">
-                <button
-                  onClick={handleNavRefresh}
-                  className="p-2 rounded-full border border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-700"
-                  title="Refresh NAV"
-                  aria-label="Refresh NAV"
-                >
-                  <svg className="w-5 h-5 hover:animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </button>
-              </div>
+
             </div>
           ) : null}
 
@@ -494,6 +481,9 @@ export default function Dashboard() {
                           ? formatCurrency(stockSummary.totalStockValue)
                           : '-')}
                   </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Delayed by 30 minutes
+                  </p>
                 </div>
               </div>
             </div>
@@ -526,6 +516,11 @@ export default function Dashboard() {
                   <p className="text-2xl font-bold text-gray-900">
                     {npsLoading ? '...' : (typeof npsValue === 'number' ? formatCurrency(npsValue) : '-')}
                   </p>
+                  {latestNpsNavDate && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Last updated: {new Date(latestNpsNavDate).toLocaleDateString('en-IN')}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

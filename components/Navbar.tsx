@@ -3,7 +3,6 @@
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
 
 export default function Navbar() {
   const [user, setUser] = useState<{ email?: string } | null>(null)
@@ -31,25 +30,18 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="bg-white shadow-sm border-b">
+    <nav className="bg-gradient-to-br from-green-500 via-green-400 to-yellow-400 shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Image 
-              src="/sipgoals_128x128.svg" 
-              alt="Portfolio Tracker Logo" 
-              width={24}
-              height={24}
-              className="mr-2"
-            />
-            <h1 className="text-xl font-semibold text-gray-900">
+            <h1 className="text-xl font-semibold text-white">
               Investment Goals Tracker
             </h1>
           </div>
           
           <div className="flex items-center space-x-6 ml-auto">
             {user && (
-              <span className="text-sm text-gray-700">
+              <span className="text-sm text-white/90">
                 {user.email}
               </span>
             )}
@@ -58,7 +50,7 @@ export default function Navbar() {
             <div className="relative">
               <button
                 onClick={() => setShowHelpMenu(!showHelpMenu)}
-                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
                 title="Help"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,7 +72,7 @@ export default function Navbar() {
 
             <button
               onClick={handleLogout}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-colors"
               title="Logout"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

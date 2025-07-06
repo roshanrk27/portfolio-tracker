@@ -52,6 +52,7 @@ export default function GoalSimulatorPage() {
   const [goals, setGoals] = useState<Goal[]>([])
   const [selectedGoalId, setSelectedGoalId] = useState<string>('')
   const [isLoadingGoals, setIsLoadingGoals] = useState(false)
+  const [isLoadingGoalData, setIsLoadingGoalData] = useState(false)
   const [formInitialData, setFormInitialData] = useState<{
     monthlySIP?: number
     xirr?: number
@@ -60,6 +61,7 @@ export default function GoalSimulatorPage() {
     existingCorpus?: number
   } | undefined>(undefined)
   const [inflationAdjusted, setInflationAdjusted] = useState(false)
+  const [isPageLoading, setIsPageLoading] = useState(true)
   // const supabase = createClientComponentClient()
 
   const handleSimulationSubmit = async (formData: SimulationFormData) => {
@@ -101,6 +103,7 @@ export default function GoalSimulatorPage() {
         if (!user?.id) {
           console.log('FETCH_GOALS No user found')
           setIsLoadingGoals(false)
+          setIsPageLoading(false)
           return
         }
 
@@ -137,6 +140,7 @@ export default function GoalSimulatorPage() {
         console.error('Error fetching goals:', error)
       } finally {
         setIsLoadingGoals(false)
+        setIsPageLoading(false)
       }
     }
 
@@ -149,6 +153,7 @@ export default function GoalSimulatorPage() {
     
     // If a goal is selected, populate the form with goal data
     if (goalId) {
+      setIsLoadingGoalData(true)
       try {
         console.log('Fetching goal with progress for ID:', goalId)
         // Get goal with progress (MF only for now)
@@ -190,10 +195,13 @@ export default function GoalSimulatorPage() {
           }
           setFormInitialData(initialData)
         }
+      } finally {
+        setIsLoadingGoalData(false)
       }
     } else {
       // Clear initial data when no goal is selected
       setFormInitialData(undefined)
+      setIsLoadingGoalData(false)
     }
   }
 
@@ -253,6 +261,38 @@ export default function GoalSimulatorPage() {
     })
   }
 
+  // Page loading skeleton
+  if (isPageLoading) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="mb-8">
+          <div className="h-8 bg-gray-200 rounded animate-pulse mb-2"></div>
+          <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4"></div>
+        </div>
+        
+        {/* Goal Selector Skeleton */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="h-6 bg-gray-200 rounded animate-pulse mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded animate-pulse mb-2"></div>
+          <div className="h-10 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+
+        {/* Form Skeleton */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="h-6 bg-gray-200 rounded animate-pulse mb-4"></div>
+          <div className="space-y-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="space-y-2">
+                <div className="h-4 bg-gray-200 rounded animate-pulse w-1/3"></div>
+                <div className="h-10 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="mb-8">
@@ -269,22 +309,32 @@ export default function GoalSimulatorPage() {
           <label htmlFor="goalSelect" className="block text-sm font-medium text-gray-700 mb-2">
             Choose a goal to prefill simulation data
           </label>
-          <select
-            id="goalSelect"
-            value={selectedGoalId}
-            onChange={(e) => handleGoalSelect(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isLoadingGoals}
-          >
-            <option value="">-- Select a goal or start fresh --</option>
-            {goals.map((goal) => (
-              <option key={goal.id} value={goal.id}>
-                {goal.name} (Target: ₹{goal.target_amount.toLocaleString()})
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              id="goalSelect"
+              value={selectedGoalId}
+              onChange={(e) => handleGoalSelect(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoadingGoals}
+            >
+              <option value="">-- Select a goal or start fresh --</option>
+              {goals.map((goal) => (
+                <option key={goal.id} value={goal.id}>
+                  {goal.name} (Target: ₹{goal.target_amount.toLocaleString()})
+                </option>
+              ))}
+            </select>
+            {isLoadingGoalData && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+              </div>
+            )}
+          </div>
           {isLoadingGoals && (
-            <p className="mt-2 text-sm text-gray-500">Loading goals...</p>
+            <div className="mt-2 flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+              <p className="text-sm text-gray-500">Loading goals...</p>
+            </div>
           )}
           {!isLoadingGoals && goals.length === 0 && (
             <p className="mt-2 text-sm text-gray-500">No goals found. Create a goal first to use this feature.</p>
@@ -292,8 +342,11 @@ export default function GoalSimulatorPage() {
           {!isLoadingGoals && goals.length > 0 && (
             <p className="mt-2 text-sm text-green-600">Found {goals.length} goal(s)</p>
           )}
-          {!isLoadingGoals && goals.length === 0 && (
-            <p className="mt-2 text-sm text-gray-500">No goals found. Create a goal first to use this feature.</p>
+          {isLoadingGoalData && (
+            <div className="mt-2 flex items-center space-x-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+              <p className="text-sm text-gray-500">Loading goal data...</p>
+            </div>
           )}
         </div>
       </div>
