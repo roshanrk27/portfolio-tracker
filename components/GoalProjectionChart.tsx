@@ -1,5 +1,7 @@
 'use client'
 
+import { adjustForInflation } from '@/lib/goalSimulator'
+
 interface ProjectionPoint {
   date: string
   corpus: number
@@ -10,6 +12,7 @@ interface GoalProjectionChartProps {
   data: ProjectionPoint[]
   title?: string
   totalInvested?: number
+  inflationAdjusted?: boolean
 }
 
 function downsample<T>(arr: T[], maxPoints: number): T[] {
@@ -25,11 +28,19 @@ function downsample<T>(arr: T[], maxPoints: number): T[] {
   return result
 }
 
-export default function GoalProjectionChart({ data, title = "Corpus Projection", totalInvested: propTotalInvested }: GoalProjectionChartProps) {
+export default function GoalProjectionChart({ data, title = "Corpus Projection", totalInvested: propTotalInvested, inflationAdjusted = false }: GoalProjectionChartProps) {
   // Defensive: filter out any undefined/null/invalid points
   const safeData = Array.isArray(data) ? data.filter(
     d => d && typeof d.corpus === 'number' && !isNaN(d.corpus)
   ) : []
+
+  // Apply inflation adjustment if requested
+  const processedData = inflationAdjusted 
+    ? safeData.map(point => ({
+        ...point,
+        corpus: adjustForInflation(point.corpus, point.months, 6)
+      }))
+    : safeData
 
   if (!safeData || safeData.length === 0) {
     return (
@@ -47,7 +58,7 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
 
   // Downsample for clarity
   const maxPoints = 40
-  const chartData = downsample(safeData, maxPoints)
+  const chartData = downsample(processedData, maxPoints)
 
   // SVG chart dimensions
   const width = 600
@@ -100,7 +111,9 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">
+        {title}{inflationAdjusted ? ' (Inflation-Adjusted)' : ''}
+      </h3>
       <div className="overflow-x-auto">
         <svg width={width} height={height} className="block mx-auto">
           {/* X and Y axes */}
@@ -145,10 +158,12 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
       {/* Summary stats */}
       <div className="grid grid-cols-2 gap-4 text-sm mt-4">
         <div className="text-gray-600">
-          <span className="font-medium">Start:</span> ₹{data[0]?.corpus.toLocaleString('en-IN') || '0'}
+          <span className="font-medium">Start:</span> ₹{processedData[0]?.corpus.toLocaleString('en-IN') || '0'}
+          {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
         </div>
         <div className="text-gray-600">
-          <span className="font-medium">End:</span> ₹{data[data.length - 1]?.corpus.toLocaleString('en-IN') || '0'}
+          <span className="font-medium">End:</span> ₹{processedData[processedData.length - 1]?.corpus.toLocaleString('en-IN') || '0'}
+          {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
         </div>
         <div className="text-gray-600">
           <span className="font-medium">Duration:</span> {data[data.length - 1]?.months || 0} months ({new Date(data[data.length - 1]?.date || Date.now()).toLocaleDateString('en-IN', { month: '2-digit', year: 'numeric' }).replace('/', '-')})
@@ -171,10 +186,13 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
               </tr>
             </thead>
             <tbody>
-              {safeData.map((point, index) => (
+              {processedData.map((point, index) => (
                 <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="p-3 text-gray-900">{new Date(point.date).toLocaleDateString('en-IN', { year: '2-digit', month: 'short' })}</td>
-                  <td className="p-3 text-right font-medium text-blue-900">₹{point.corpus.toLocaleString('en-IN')}</td>
+                  <td className="p-3 text-right font-medium text-blue-900">
+                    ₹{point.corpus.toLocaleString('en-IN')}
+                    {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
+                  </td>
                   <td className="p-3 text-right text-gray-500">{point.months}</td>
                 </tr>
               ))}

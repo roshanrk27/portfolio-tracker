@@ -1,6 +1,6 @@
 'use client'
 
-import { calculateCorpusWithStepUp } from '@/lib/goalSimulator'
+import { calculateCorpusWithStepUp, calculateNominalValue } from '@/lib/goalSimulator'
 
 interface StepUpEffectChartProps {
   stepUpPercents: number[]
@@ -9,14 +9,20 @@ interface StepUpEffectChartProps {
   targetAmount: number
   existingCorpus?: number
   title?: string
+  inflationAdjusted?: boolean
 }
 
-export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPercent, targetAmount, existingCorpus = 0, title = 'Step-up vs Time-to-goal' }: StepUpEffectChartProps) {
+export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPercent, targetAmount, existingCorpus = 0, title = 'Step-up vs Time-to-goal', inflationAdjusted = false }: StepUpEffectChartProps) {
   // Compute months to goal for each step-up percent
-  const data = stepUpPercents.map(stepUp => ({
-    stepUp,
-    months: calculateCorpusWithStepUp(monthlySIP, xirrPercent, stepUp, targetAmount, undefined, existingCorpus).months
-  }))
+  const data = stepUpPercents.map(stepUp => {
+    const result = calculateCorpusWithStepUp(monthlySIP, xirrPercent, stepUp, targetAmount, undefined, existingCorpus)
+    return {
+      stepUp,
+      months: result.months,
+      // If inflation adjusted, we need to calculate the real target amount needed
+      realTargetAmount: inflationAdjusted ? calculateNominalValue(targetAmount, result.months, 6) : targetAmount
+    }
+  })
 
   // SVG chart dimensions
   const width = 500
@@ -36,7 +42,9 @@ export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPerc
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">
+        {title}{inflationAdjusted ? ' (Inflation-Adjusted)' : ''}
+      </h3>
       <div className="overflow-x-auto">
         <svg width={width} height={height} className="block mx-auto">
           {/* X and Y axes */}

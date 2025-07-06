@@ -5,7 +5,7 @@ import GoalSimulatorForm, { SimulationFormData } from '@/components/GoalSimulato
 import GoalProjectionChart from '@/components/GoalProjectionChart'
 import StepUpEffectChart from '@/components/StepUpEffectChart'
 import SimulationSummaryTable from '@/components/SimulationSummaryTable'
-import { calculateCorpusWithStepUp } from '@/lib/goalSimulator'
+import { calculateCorpusWithStepUp, adjustForInflation } from '@/lib/goalSimulator'
 //import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { supabase } from '@/lib/supabaseClient'
 import { getGoals, getAverageMonthlyInvestmentByGoal, getGoalWithProgress } from '@/lib/portfolioUtils'
@@ -59,6 +59,7 @@ export default function GoalSimulatorPage() {
     targetAmount?: number
     existingCorpus?: number
   } | undefined>(undefined)
+  const [inflationAdjusted, setInflationAdjusted] = useState(false)
   // const supabase = createClientComponentClient()
 
   const handleSimulationSubmit = async (formData: SimulationFormData) => {
@@ -305,6 +306,30 @@ export default function GoalSimulatorPage() {
           onSubmit={handleSimulationSubmit}
           onChange={handleFormChange}
         />
+        
+        {/* Inflation Adjustment Toggle */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <label htmlFor="inflationToggle" className="text-sm font-medium text-gray-700">
+                Show Inflation-Adjusted Values
+              </label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="inflationToggle"
+                  checked={inflationAdjusted}
+                  onChange={(e) => setInflationAdjusted(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="text-xs text-gray-500">(6% annual inflation)</span>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">
+              Adjusts values for purchasing power over time
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -343,9 +368,15 @@ export default function GoalSimulatorPage() {
           {/* Summary */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-blue-50 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-blue-800">Final Corpus</h3>
+              <h3 className="text-sm font-medium text-blue-800">
+                Final Corpus{inflationAdjusted ? ' (Real)' : ''}
+              </h3>
               <div className="text-lg font-mono font-bold text-blue-900 text-center">
-                {formatLargeNumber(simulationResult.summary.finalCorpus)}
+                {formatLargeNumber(
+                  inflationAdjusted 
+                    ? adjustForInflation(simulationResult.summary.finalCorpus, simulationResult.summary.totalMonths, 6)
+                    : simulationResult.summary.finalCorpus
+                )}
               </div>
             </div>
             <div className="bg-cyan-50 rounded-lg p-4">
@@ -379,6 +410,7 @@ export default function GoalSimulatorPage() {
             data={simulationResult.projection} 
             title="Corpus Projection Over Time"
             totalInvested={simulationResult.summary.totalInvested}
+            inflationAdjusted={inflationAdjusted}
           />
 
           {/* Step-up vs Time-to-goal Chart */}
@@ -390,13 +422,14 @@ export default function GoalSimulatorPage() {
                 xirrPercent={lastFormData.xirr}
                 targetAmount={lastFormData.targetAmount}
                 existingCorpus={lastFormData.existingCorpus}
+                inflationAdjusted={inflationAdjusted}
               />
             </div>
           )}
 
           {/* Simulation Scenario Table */}
           <div className="mt-8">
-            <SimulationSummaryTable scenarios={getScenarios()} />
+            <SimulationSummaryTable scenarios={getScenarios()} inflationAdjusted={inflationAdjusted} />
           </div>
         </div>
       )}

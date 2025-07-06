@@ -207,4 +207,76 @@ export function calculateCorpusWithStepUp(
     console.error('Error in calculateCorpusWithStepUp:', error)
     return { corpus: 0, months: 0 }
   }
+}
+
+/**
+ * Inflation adjustment utilities for goal simulation
+ * Uses 6% annual inflation rate for real value calculations
+ */
+
+/**
+ * Adjust a nominal value for inflation over a given time period
+ * @param nominalValue - The nominal (future) value
+ * @param months - Number of months from now
+ * @param inflationRate - Annual inflation rate (default 6%)
+ * @returns Real value in today's purchasing power
+ */
+export function adjustForInflation(
+  nominalValue: number, 
+  months: number, 
+  inflationRate: number = 6
+): number {
+  try {
+    if (nominalValue <= 0 || months < 0 || inflationRate < 0) {
+      return nominalValue
+    }
+    
+    const years = months / 12
+    const inflationFactor = Math.pow(1 + inflationRate / 100, years)
+    return Math.round((nominalValue / inflationFactor) * 100) / 100
+  } catch (error) {
+    console.error('Error in adjustForInflation:', error)
+    return nominalValue
+  }
+}
+
+/**
+ * Calculate the inflation-adjusted value for a given time period
+ * @param currentValue - Current value
+ * @param monthsFromNow - Months from now
+ * @param inflationRate - Annual inflation rate (default 6%)
+ * @returns Inflation-adjusted value
+ */
+export function getInflationAdjustedValue(
+  currentValue: number, 
+  monthsFromNow: number, 
+  inflationRate: number = 6
+): number {
+  return adjustForInflation(currentValue, monthsFromNow, inflationRate)
+}
+
+/**
+ * Calculate the nominal value needed to maintain purchasing power
+ * @param realValue - Real value in today's terms
+ * @param months - Number of months from now
+ * @param inflationRate - Annual inflation rate (default 6%)
+ * @returns Nominal value needed
+ */
+export function calculateNominalValue(
+  realValue: number, 
+  months: number, 
+  inflationRate: number = 6
+): number {
+  try {
+    if (realValue <= 0 || months < 0 || inflationRate < 0) {
+      return realValue
+    }
+    
+    const years = months / 12
+    const inflationFactor = Math.pow(1 + inflationRate / 100, years)
+    return Math.round((realValue * inflationFactor) * 100) / 100
+  } catch (error) {
+    console.error('Error in calculateNominalValue:', error)
+    return realValue
+  }
 } 

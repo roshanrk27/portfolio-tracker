@@ -1,5 +1,7 @@
 'use client'
 
+import { adjustForInflation } from '@/lib/goalSimulator'
+
 // Utility to format large numbers as 1K, 1M, 1B, etc.
 function formatLargeNumber(n: number): string {
   if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
@@ -20,9 +22,10 @@ interface SimulationScenario {
 interface SimulationSummaryTableProps {
   scenarios: SimulationScenario[]
   title?: string
+  inflationAdjusted?: boolean
 }
 
-export default function SimulationSummaryTable({ scenarios, title = 'Simulation Scenario Comparison' }: SimulationSummaryTableProps) {
+export default function SimulationSummaryTable({ scenarios, title = 'Simulation Scenario Comparison', inflationAdjusted = false }: SimulationSummaryTableProps) {
   if (!scenarios || scenarios.length === 0) {
     return (
       <div className="bg-gray-50 rounded-lg p-8 text-center">
@@ -39,7 +42,9 @@ export default function SimulationSummaryTable({ scenarios, title = 'Simulation 
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-6">
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">
+        {title}{inflationAdjusted ? ' (Inflation-Adjusted)' : ''}
+      </h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
           <thead className="bg-gray-100 sticky top-0 z-10">
@@ -49,20 +54,31 @@ export default function SimulationSummaryTable({ scenarios, title = 'Simulation 
               <th className="p-3 text-left font-semibold text-gray-700">Step-up (%)</th>
               <th className="p-3 text-left font-semibold text-gray-700">Total Invested (₹)</th>
               <th className="p-3 text-left font-semibold text-gray-700">Goal Date</th>
-              <th className="p-3 text-left font-semibold text-gray-700">Final Corpus (₹)</th>
+              <th className="p-3 text-left font-semibold text-gray-700">
+                Final Corpus (₹){inflationAdjusted ? ' (Real)' : ''}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {scenarios.map((s, i) => (
-              <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                <td className="p-3 text-gray-900">{s.xirr.toFixed(2)}</td>
-                <td className="p-3 text-gray-900">{formatLargeNumber(s.sip)}</td>
-                <td className="p-3 text-gray-900">{s.stepUp}%</td>
-                <td className="p-3 text-gray-900">{formatLargeNumber(s.totalInvested)}</td>
-                <td className="p-3 text-gray-900">{s.goalDate}</td>
-                <td className="p-3 font-semibold text-blue-900">{formatLargeNumber(s.finalCorpus)}</td>
-              </tr>
-            ))}
+            {scenarios.map((s, i) => {
+              // Calculate inflation-adjusted final corpus
+              const months = Math.ceil((new Date(s.goalDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30))
+              const realCorpus = inflationAdjusted ? adjustForInflation(s.finalCorpus, months, 6) : s.finalCorpus
+              
+              return (
+                <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <td className="p-3 text-gray-900">{s.xirr.toFixed(2)}</td>
+                  <td className="p-3 text-gray-900">{formatLargeNumber(s.sip)}</td>
+                  <td className="p-3 text-gray-900">{s.stepUp}%</td>
+                  <td className="p-3 text-gray-900">{formatLargeNumber(s.totalInvested)}</td>
+                  <td className="p-3 text-gray-900">{s.goalDate}</td>
+                  <td className="p-3 font-semibold text-blue-900">
+                    {formatLargeNumber(realCorpus)}
+                    {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>
