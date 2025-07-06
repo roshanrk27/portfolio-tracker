@@ -151,7 +151,7 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
           <span className="font-medium">End:</span> ₹{data[data.length - 1]?.corpus.toLocaleString('en-IN') || '0'}
         </div>
         <div className="text-gray-600">
-          <span className="font-medium">Duration:</span> {data[data.length - 1]?.months || 0} months
+          <span className="font-medium">Duration:</span> {data[data.length - 1]?.months || 0} months ({new Date(data[data.length - 1]?.date || Date.now()).toLocaleDateString('en-IN', { month: '2-digit', year: 'numeric' }).replace('/', '-')})
         </div>
         <div className="text-gray-600">
           <span className="font-medium">Growth:</span> {growthPct}%

@@ -3,6 +3,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 
 export default function Navbar() {
   const [user, setUser] = useState<{ email?: string } | null>(null)
@@ -34,10 +35,12 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <img 
+            <Image 
               src="/sipgoals_128x128.svg" 
               alt="Portfolio Tracker Logo" 
-              className="w-6 h-6 mr-2"
+              width={24}
+              height={24}
+              className="mr-2"
             />
             <h1 className="text-xl font-semibold text-gray-900">
               Investment Goals Tracker

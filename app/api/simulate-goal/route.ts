@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { calculateCorpusWithStepUp } from '@/lib/goalSimulator'
-import { getGoalXIRR, getAverageMonthlyInvestmentByGoal } from '@/lib/portfolioUtils'
+import { getGoalXIRR, getAverageMonthlyInvestmentByGoal, getGoalWithProgress } from '@/lib/portfolioUtils'
+import { getUserXirrByGoal } from '@/lib/xirr'
 
 interface SimulationRequest {
   monthlySIP?: number
@@ -9,6 +10,7 @@ interface SimulationRequest {
   targetAmount?: number
   months?: number
   goalId?: string
+  existingCorpus?: number
 }
 
 interface ProjectionPoint {
@@ -27,15 +29,32 @@ export async function POST(request: NextRequest) {
       xirr: body.xirr,
       stepUp: body.stepUp || 0,
       targetAmount: body.targetAmount,
-      months: body.months
+      months: body.months,
+      existingCorpus: body.existingCorpus || 0
     }
 
     if (body.goalId) {
       try {
-        // Get goal XIRR
-        const xirrData = await getGoalXIRR(body.goalId)
-        if (xirrData && xirrData.converged) {
-          prefilledData.xirr = body.xirr ?? (xirrData.xirrPercentage || 12) // Default to 12% if no XIRR
+        // Get goal details for target amount
+        const goalWithProgress = await getGoalWithProgress(body.goalId)
+        if (goalWithProgress) {
+          // Prefill target amount from goal
+          prefilledData.targetAmount = body.targetAmount ?? goalWithProgress.target_amount
+          
+          // Prefill existing corpus from current goal value
+          prefilledData.existingCorpus = body.existingCorpus ?? goalWithProgress.current_amount
+        }
+
+        // Get goal XIRR using the dedicated XIRR utility
+        const goalXirr = await getUserXirrByGoal(body.goalId)
+        if (goalXirr > 0) {
+          prefilledData.xirr = body.xirr ?? goalXirr
+        } else {
+          // Fallback to the existing getGoalXIRR if getUserXirrByGoal returns 0
+          const xirrData = await getGoalXIRR(body.goalId)
+          if (xirrData && xirrData.converged) {
+            prefilledData.xirr = body.xirr ?? (xirrData.xirrPercentage || 12)
+          }
         }
 
         // Get average monthly investment for this goal
@@ -44,7 +63,7 @@ export async function POST(request: NextRequest) {
           prefilledData.monthlySIP = body.monthlySIP ?? avgMonthlyInvestment
         }
 
-        // Note: targetAmount and months can be overridden by user input
+        // Note: All values can be overridden by user input
       } catch (error) {
         console.error('Error fetching goal data:', error)
         // Continue with provided values if goal data fetch fails
@@ -67,7 +86,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate input values
-    if (prefilledData.monthlySIP <= 0 || prefilledData.xirr < 0 || prefilledData.stepUp < 0) {
+    if (prefilledData.monthlySIP <= 0 || prefilledData.xirr < 0 || prefilledData.stepUp < 0 || prefilledData.existingCorpus < 0) {
       return NextResponse.json(
         { error: 'Invalid input values: all values must be positive' },
         { status: 400 }
@@ -83,7 +102,9 @@ export async function POST(request: NextRequest) {
         prefilledData.monthlySIP!,
         prefilledData.xirr!,
         prefilledData.stepUp,
-        prefilledData.targetAmount
+        prefilledData.targetAmount,
+        undefined,
+        prefilledData.existingCorpus
       )
       simulationMonths = result.months
     }
@@ -104,7 +125,7 @@ export async function POST(request: NextRequest) {
       if (months === 0) {
         projection.push({
           date: startDate.toISOString().split('T')[0],
-          corpus: 0,
+          corpus: prefilledData.existingCorpus,
           months: 0
         })
         continue
@@ -114,7 +135,8 @@ export async function POST(request: NextRequest) {
         prefilledData.xirr!,
         prefilledData.stepUp,
         undefined,
-        months
+        months,
+        prefilledData.existingCorpus
       )
       const projectionDate = new Date(startDate)
       projectionDate.setMonth(projectionDate.getMonth() + months)
@@ -146,6 +168,7 @@ export async function POST(request: NextRequest) {
         stepUp: prefilledData.stepUp,
         targetAmount: prefilledData.targetAmount,
         goalId: body.goalId,
+        existingCorpus: prefilledData.existingCorpus,
         totalInvested: Math.round(totalInvested)
       }
     })

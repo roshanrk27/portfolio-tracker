@@ -1271,6 +1271,143 @@ export async function batchCalculateXIRR(userId: string, goals: GoalData[], allM
 }
 
 /**
+ * Get a single goal with all asset types (MF, Stock, NPS) current values
+ */
+export async function getGoalWithAllAssets(goalId: string) {
+  try {
+    // Get goal details to get user_id
+    const { data: goal, error: goalError } = await supabaseServer
+      .from('goals')
+      .select('*')
+      .eq('id', goalId)
+      .single()
+
+    if (goalError) {
+      console.error('Error fetching goal for all assets:', goalError)
+      return null
+    }
+
+    // Get goal mappings
+    const { data: mappings, error: mappingError } = await supabaseServer
+      .from('goal_scheme_mapping')
+      .select('*')
+      .eq('goal_id', goalId)
+
+    if (mappingError) {
+      console.error('Error fetching goal mappings for all assets:', mappingError)
+      return { ...goal, current_amount: 0 }
+    }
+
+    if (!mappings || mappings.length === 0) {
+      return { ...goal, current_amount: 0 }
+    }
+
+    let mutualFundValue = 0
+    let npsValue = 0
+    let stockValue = 0
+    const mappedStocks: { stock_code: string; quantity: number; exchange: string; source_id: string }[] = []
+
+    // Process each mapping
+    for (const mapping of mappings) {
+      if (mapping.source_type === 'mutual_fund') {
+        // Get mutual fund current value
+        const { data: portfolioEntry } = await supabaseServer
+          .from('current_portfolio')
+          .select('current_value')
+          .eq('user_id', goal.user_id)
+          .eq('scheme_name', mapping.scheme_name)
+          .eq('folio', mapping.folio || '')
+          .single()
+
+        if (portfolioEntry) {
+          mutualFundValue += parseFloat(portfolioEntry.current_value || '0')
+        }
+      } else if (mapping.source_type === 'stock' && mapping.source_id) {
+        // Get stock details
+        const { data: stockData } = await supabaseServer
+          .from('stocks')
+          .select('stock_code, quantity, exchange')
+          .eq('id', mapping.source_id)
+          .single()
+
+        if (stockData) {
+          mappedStocks.push({
+            stock_code: stockData.stock_code,
+            quantity: stockData.quantity,
+            exchange: stockData.exchange,
+            source_id: mapping.source_id
+          })
+        }
+      } else if (mapping.source_type === 'nps' && mapping.source_id) {
+        // Get NPS holding and NAV
+        const { data: npsHolding } = await supabaseServer
+          .from('nps_holdings')
+          .select('fund_code, units')
+          .eq('id', mapping.source_id)
+          .single()
+
+        if (npsHolding) {
+          const { data: npsNav } = await supabaseServer
+            .from('nps_nav')
+            .select('nav')
+            .eq('fund_code', npsHolding.fund_code)
+            .single()
+
+          if (npsNav) {
+            const nav = parseFloat(npsNav.nav)
+            const units = parseFloat(npsHolding.units)
+            npsValue += nav * units
+          }
+        }
+      }
+    }
+
+    // Calculate stock values from cache
+    if (mappedStocks.length > 0) {
+      // Get unique stock symbols
+      const stockSymbols = Array.from(new Set(mappedStocks.map(stock => stock.stock_code)))
+      
+      // Fetch stock prices from cache
+      const { data: stockPrices } = await supabaseServer
+        .from('stock_prices_cache')
+        .select('symbol, price_inr')
+        .in('symbol', stockSymbols)
+
+      if (stockPrices) {
+        // Create a map of stock codes to prices
+        const priceMap = stockPrices.reduce((acc, price) => {
+          acc[price.symbol] = parseFloat(price.price_inr || '0')
+          return acc
+        }, {} as Record<string, number>)
+
+        // Calculate total stock value
+        for (const stock of mappedStocks) {
+          const price = priceMap[stock.stock_code]
+          if (price && price > 0) {
+            stockValue += stock.quantity * price
+          }
+        }
+      }
+    }
+
+    // Total current value includes MF + NPS + Stock values
+    const totalCurrentValue = mutualFundValue + npsValue + stockValue
+
+    return {
+      ...goal,
+      current_amount: totalCurrentValue,
+      mutual_fund_value: mutualFundValue,
+      nps_value: npsValue,
+      stock_value: stockValue,
+      mappedStocks
+    }
+  } catch (error) {
+    console.error('Error in getGoalWithAllAssets:', error)
+    return null
+  }
+}
+
+/**
  * Calculate average monthly investment for a specific goal over the last 12 months
  */
 export async function getAverageMonthlyInvestmentByGoal(goalId: string): Promise<number> {

@@ -7,14 +7,15 @@ interface StepUpEffectChartProps {
   monthlySIP: number
   xirrPercent: number
   targetAmount: number
+  existingCorpus?: number
   title?: string
 }
 
-export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPercent, targetAmount, title = 'Step-up vs Time-to-goal' }: StepUpEffectChartProps) {
+export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPercent, targetAmount, existingCorpus = 0, title = 'Step-up vs Time-to-goal' }: StepUpEffectChartProps) {
   // Compute months to goal for each step-up percent
   const data = stepUpPercents.map(stepUp => ({
     stepUp,
-    months: calculateCorpusWithStepUp(monthlySIP, xirrPercent, stepUp, targetAmount).months
+    months: calculateCorpusWithStepUp(monthlySIP, xirrPercent, stepUp, targetAmount, undefined, existingCorpus).months
   }))
 
   // SVG chart dimensions

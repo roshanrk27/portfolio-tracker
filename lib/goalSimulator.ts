@@ -50,15 +50,17 @@ export function calculateCorpus(
  * Calculate number of months needed to reach target amount
  * Uses inverse of SIP formula: n = log((FV * r / P) + 1) / log(1 + r)
  * Where:
- * - FV = Target amount
+ * - FV = Target amount (adjusted for existing corpus)
  * - P = Monthly SIP amount
  * - r = Monthly interest rate (annual rate / 12)
  * - n = Number of months
+ * Accounts for existing corpus that grows alongside SIP investments
  */
 export function calculateMonthsToTarget(
   targetAmount: number,
   monthlySIP: number,
-  xirrPercent: number
+  xirrPercent: number,
+  existingCorpus: number = 0
 ): number {
   try {
     // Validate inputs
@@ -71,24 +73,33 @@ export function calculateMonthsToTarget(
 
     // Handle edge case where rate is 0
     if (monthlyRate === 0) {
-      return Math.ceil(targetAmount / monthlySIP)
+      const remainingTarget = targetAmount - existingCorpus
+      return Math.ceil(remainingTarget / monthlySIP)
     }
 
     // Calculate using inverse SIP formula: n = log((FV * r / P) + 1) / log(1 + r)
-    const ratePlusOne = 1 + monthlyRate
-    const targetTimesRate = targetAmount * monthlyRate
-    const sipAmount = monthlySIP
-    const logArgument = (targetTimesRate / sipAmount) + 1
+    // First, we need to account for existing corpus growth
+    // The equation becomes: targetAmount = existingCorpus * (1 + r)^n + SIP * [((1 + r)^n - 1) / r] * (1 + r)
+    // Solving for n requires iterative approach since existing corpus growth affects the calculation
     
-    // Check if log argument is valid (must be positive)
-    if (logArgument <= 0) {
-      return 0
+    // For simplicity and accuracy, we'll use an iterative approach
+    let months = 0
+    const maxMonths = 600 // 50 years max
+    
+    while (months < maxMonths) {
+      // Calculate what the corpus would be after 'months' months
+      const futureValueOfExisting = existingCorpus * Math.pow(1 + monthlyRate, months)
+      const sipCorpus = monthlySIP * ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate) * (1 + monthlyRate)
+      const totalCorpus = futureValueOfExisting + sipCorpus
+      
+      if (totalCorpus >= targetAmount) {
+        return months
+      }
+      
+      months++
     }
-
-    const months = Math.log(logArgument) / Math.log(ratePlusOne)
-
-    // Return ceiling of months (round up to ensure target is reached)
-    return Math.ceil(months)
+    
+    return maxMonths // Return max months if target cannot be reached
   } catch (error) {
     console.error('Error in calculateMonthsToTarget:', error)
     return 0
@@ -99,13 +110,15 @@ export function calculateMonthsToTarget(
  * Calculate corpus with yearly step-up SIP
  * Simulates year-by-year SIP increment with monthly compounding
  * Can return either final corpus (if months given) or months to reach target
+ * Supports existing corpus that grows alongside new SIP investments
  */
 export function calculateCorpusWithStepUp(
   monthlySIP: number,
   xirrPercent: number,
   stepUpPercent: number,
   targetAmount?: number,
-  months?: number
+  months?: number,
+  existingCorpus: number = 0
 ): { corpus: number; months: number } {
   try {
     // Validate inputs
@@ -121,11 +134,12 @@ export function calculateCorpusWithStepUp(
     if (monthlyRate === 0) {
       if (targetAmount && !months) {
         // Calculate months needed without interest
-        const totalMonths = Math.ceil(targetAmount / monthlySIP)
+        const remainingTarget = targetAmount - existingCorpus
+        const totalMonths = Math.ceil(remainingTarget / monthlySIP)
         return { corpus: targetAmount, months: totalMonths }
       } else if (months) {
         // Calculate corpus without interest
-        let totalCorpus = 0
+        let totalCorpus = existingCorpus
         let currentSIP = monthlySIP
         
         for (let year = 0; year < Math.ceil(months / 12); year++) {
@@ -136,10 +150,10 @@ export function calculateCorpusWithStepUp(
         
         return { corpus: totalCorpus, months }
       }
-      return { corpus: 0, months: 0 }
+      return { corpus: existingCorpus, months: 0 }
     }
 
-    let totalCorpus = 0
+    let totalCorpus = existingCorpus
     let currentSIP = monthlySIP
     let currentMonth = 0
     let targetReached = false

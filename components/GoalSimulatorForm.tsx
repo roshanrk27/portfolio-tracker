@@ -9,6 +9,7 @@ interface GoalSimulatorFormProps {
     xirr?: number
     stepUp?: number
     targetAmount?: number
+    existingCorpus?: number
   }
   onSubmit?: (data: SimulationFormData) => void
   onChange?: (data: SimulationFormData) => void
@@ -19,6 +20,7 @@ export interface SimulationFormData {
   xirr: number
   stepUp: number
   targetAmount?: number
+  existingCorpus: number
   goalId?: string
 }
 
@@ -33,10 +35,26 @@ export default function GoalSimulatorForm({
     xirr: initialData?.xirr || 12,
     stepUp: initialData?.stepUp || 0,
     targetAmount: initialData?.targetAmount,
+    existingCorpus: initialData?.existingCorpus || 0,
     goalId
   })
 
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Update form data when initialData changes
+  useEffect(() => {
+    if (initialData) {
+      setFormData(prev => ({
+        ...prev,
+        monthlySIP: initialData.monthlySIP ? Math.round(initialData.monthlySIP) : prev.monthlySIP,
+        xirr: initialData.xirr ?? prev.xirr,
+        stepUp: initialData.stepUp ?? prev.stepUp,
+        targetAmount: initialData.targetAmount ?? prev.targetAmount,
+        existingCorpus: initialData.existingCorpus ? Math.round(initialData.existingCorpus) : prev.existingCorpus,
+        goalId: goalId ?? prev.goalId
+      }))
+    }
+  }, [initialData, goalId])
 
   // Emit changes when form data changes
   useEffect(() => {
@@ -64,6 +82,10 @@ export default function GoalSimulatorForm({
       newErrors.targetAmount = 'Target amount must be greater than 0'
     }
 
+    if (formData.existingCorpus < 0) {
+      newErrors.existingCorpus = 'Existing corpus must be greater than or equal to 0'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -79,9 +101,14 @@ export default function GoalSimulatorForm({
   const handleInputChange = (field: keyof SimulationFormData, value: string | number) => {
     const numValue = typeof value === 'string' ? parseFloat(value) || 0 : value
     
+    // Round to whole numbers for monthlySIP and existingCorpus
+    const roundedValue = (field === 'monthlySIP' || field === 'existingCorpus') 
+      ? Math.round(numValue) 
+      : numValue
+    
     setFormData(prev => ({
       ...prev,
-      [field]: numValue
+      [field]: roundedValue
     }))
   }
 
@@ -103,7 +130,7 @@ export default function GoalSimulatorForm({
             }`}
             placeholder="Enter monthly SIP amount"
             min="0"
-            step="100"
+            step="1"
           />
           {errors.monthlySIP && (
             <p className="mt-1 text-sm text-red-600">{errors.monthlySIP}</p>
@@ -171,10 +198,32 @@ export default function GoalSimulatorForm({
             }`}
             placeholder="Enter target amount"
             min="0"
-            step="1000"
+            step="1"
           />
           {errors.targetAmount && (
             <p className="mt-1 text-sm text-red-600">{errors.targetAmount}</p>
+          )}
+        </div>
+
+        {/* Existing Corpus */}
+        <div>
+          <label htmlFor="existingCorpus" className="block text-sm font-medium text-gray-700 mb-2">
+            Existing Corpus (₹) <span className="text-gray-500">(Optional)</span>
+          </label>
+          <input
+            type="number"
+            id="existingCorpus"
+            value={formData.existingCorpus || ''}
+            onChange={(e) => handleInputChange('existingCorpus', e.target.value)}
+            className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              errors.existingCorpus ? 'border-red-500' : 'border-gray-300'
+            }`}
+            placeholder="Enter existing corpus amount"
+            min="0"
+            step="1"
+          />
+          {errors.existingCorpus && (
+            <p className="mt-1 text-sm text-red-600">{errors.existingCorpus}</p>
           )}
         </div>
       </div>

@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import GoalSimulatorForm, { SimulationFormData } from '@/components/GoalSimulatorForm'
 import GoalProjectionChart from '@/components/GoalProjectionChart'
 import StepUpEffectChart from '@/components/StepUpEffectChart'
 import SimulationSummaryTable from '@/components/SimulationSummaryTable'
 import { calculateCorpusWithStepUp } from '@/lib/goalSimulator'
+//import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { supabase } from '@/lib/supabaseClient'
+import { getGoals, getAverageMonthlyInvestmentByGoal, getGoalWithProgress } from '@/lib/portfolioUtils'
 
 // Utility to format large numbers as 1K, 1M, 1B, etc.
 function formatLargeNumber(n: number | undefined): string {
@@ -14,6 +17,13 @@ function formatLargeNumber(n: number | undefined): string {
   if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
   return `₹${n.toLocaleString('en-IN')}`
+}
+
+interface Goal {
+  id: string
+  name: string
+  target_amount: number
+  current_amount: number
 }
 
 interface SimulationResult {
@@ -39,6 +49,17 @@ export default function GoalSimulatorPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastFormData, setLastFormData] = useState<SimulationFormData | null>(null)
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [selectedGoalId, setSelectedGoalId] = useState<string>('')
+  const [isLoadingGoals, setIsLoadingGoals] = useState(false)
+  const [formInitialData, setFormInitialData] = useState<{
+    monthlySIP?: number
+    xirr?: number
+    stepUp?: number
+    targetAmount?: number
+    existingCorpus?: number
+  } | undefined>(undefined)
+  // const supabase = createClientComponentClient()
 
   const handleSimulationSubmit = async (formData: SimulationFormData) => {
     setIsLoading(true)
@@ -66,6 +87,112 @@ export default function GoalSimulatorPage() {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Fetch user goals
+  useEffect(() => {
+    const fetchGoals = async () => {
+      setIsLoadingGoals(true)
+      try {
+        // Get user directly
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user?.id) {
+          console.log('FETCH_GOALS No user found')
+          setIsLoadingGoals(false)
+          return
+        }
+
+        const userId = user.id
+        console.log('Using user ID from getUser:', userId)
+
+        // Use the existing getGoals function from portfolioUtils
+        const goalsData = await getGoals(userId)
+        console.log('Fetched goals using getGoals:', goalsData)
+        console.log('Goals count:', goalsData?.length || 0)
+        
+        // Transform the data to match our interface
+        const transformedGoals = goalsData.map(goal => ({
+          id: goal.id,
+          name: goal.name,
+          target_amount: goal.target_amount,
+          current_amount: goal.current_amount || 0
+        }))
+
+        // Add a test goal if no goals are found
+        if (transformedGoals.length === 0) {
+          console.log('No goals found, adding test goal')
+          transformedGoals.push({
+            id: 'test-goal-1',
+            name: 'Test Goal',
+            target_amount: 1000000,
+            current_amount: 50000
+          })
+        }
+
+        console.log('Final goals array:', transformedGoals)
+        setGoals(transformedGoals)
+      } catch (error) {
+        console.error('Error fetching goals:', error)
+      } finally {
+        setIsLoadingGoals(false)
+      }
+    }
+
+    fetchGoals()
+  }, [])
+
+  const handleGoalSelect = async (goalId: string) => {
+    console.log('Goal selected:', goalId)
+    setSelectedGoalId(goalId)
+    
+    // If a goal is selected, populate the form with goal data
+    if (goalId) {
+      try {
+        console.log('Fetching goal with progress for ID:', goalId)
+        // Get goal with progress (MF only for now)
+        const goalWithProgress = await getGoalWithProgress(goalId)
+        console.log('Goal with progress result:', goalWithProgress)
+        if (goalWithProgress) {
+          // Get average monthly investment for this goal
+          const avgMonthlySIP = await getAverageMonthlyInvestmentByGoal(goalId)
+          
+          // Create initial data for the form
+          const initialData = {
+            targetAmount: goalWithProgress.target_amount,
+            existingCorpus: goalWithProgress.current_amount, // Includes MF only
+            monthlySIP: avgMonthlySIP, // Use average monthly SIP
+            xirr: 12, // Default XIRR
+            stepUp: 0, // Default step-up
+          }
+          
+          // Log the breakdown for debugging
+          console.log('Goal corpus breakdown:', {
+            total: goalWithProgress.current_amount,
+            target: goalWithProgress.target_amount
+          })
+          
+          // Set the initial data for the form
+          setFormInitialData(initialData)
+        }
+      } catch (error) {
+        console.error('Error fetching goal data:', error)
+        // Fallback to basic goal data
+        const selectedGoal = goals.find(goal => goal.id === goalId)
+        if (selectedGoal) {
+          const initialData = {
+            targetAmount: selectedGoal.target_amount,
+            existingCorpus: selectedGoal.current_amount,
+            monthlySIP: 0,
+            xirr: 12,
+            stepUp: 0,
+          }
+          setFormInitialData(initialData)
+        }
+      }
+    } else {
+      // Clear initial data when no goal is selected
+      setFormInitialData(undefined)
     }
   }
 
@@ -101,7 +228,9 @@ export default function GoalSimulatorPage() {
           base.monthlySIP,
           xirr,
           stepUp,
-          base.targetAmount
+          base.targetAmount,
+          undefined,
+          lastFormData.existingCorpus
         )
         scenarios.push({
           xirr,
@@ -132,9 +261,47 @@ export default function GoalSimulatorPage() {
         </p>
       </div>
 
+      {/* Goal Selector */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">Select Goal (Optional)</h2>
+        <div className="mb-4">
+          <label htmlFor="goalSelect" className="block text-sm font-medium text-gray-700 mb-2">
+            Choose a goal to prefill simulation data
+          </label>
+          <select
+            id="goalSelect"
+            value={selectedGoalId}
+            onChange={(e) => handleGoalSelect(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoadingGoals}
+          >
+            <option value="">-- Select a goal or start fresh --</option>
+            {goals.map((goal) => (
+              <option key={goal.id} value={goal.id}>
+                {goal.name} (Target: ₹{goal.target_amount.toLocaleString()})
+              </option>
+            ))}
+          </select>
+          {isLoadingGoals && (
+            <p className="mt-2 text-sm text-gray-500">Loading goals...</p>
+          )}
+          {!isLoadingGoals && goals.length === 0 && (
+            <p className="mt-2 text-sm text-gray-500">No goals found. Create a goal first to use this feature.</p>
+          )}
+          {!isLoadingGoals && goals.length > 0 && (
+            <p className="mt-2 text-sm text-green-600">Found {goals.length} goal(s)</p>
+          )}
+          {!isLoadingGoals && goals.length === 0 && (
+            <p className="mt-2 text-sm text-gray-500">No goals found. Create a goal first to use this feature.</p>
+          )}
+        </div>
+      </div>
+
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">Simulation Parameters</h2>
         <GoalSimulatorForm
+          goalId={selectedGoalId}
+          initialData={formInitialData}
           onSubmit={handleSimulationSubmit}
           onChange={handleFormChange}
         />
@@ -222,6 +389,7 @@ export default function GoalSimulatorPage() {
                 monthlySIP={lastFormData.monthlySIP}
                 xirrPercent={lastFormData.xirr}
                 targetAmount={lastFormData.targetAmount}
+                existingCorpus={lastFormData.existingCorpus}
               />
             </div>
           )}
