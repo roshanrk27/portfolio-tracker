@@ -153,7 +153,7 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
   return (
     <>
       <div
-        className="bg-white rounded-lg shadow-md border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+        className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6 hover:shadow-lg transition-shadow cursor-pointer"
         onClick={e => {
           // Prevent modal open if clicking actions menu
           if ((e.target as HTMLElement).closest('.goal-actions-menu')) return
@@ -249,18 +249,18 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         </div>
 
         {/* Financial Summary */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <p className="text-sm text-gray-600">Current Amount</p>
             {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
               <div className="flex items-center h-7"><span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></span> <span className="text-gray-500 text-sm">Fetching...</span></div>
             ) : (
-              <p className="text-lg font-semibold text-gray-900">{formatCurrency(goal.current_amount + (liveStockValue || 0))}</p>
+              <p className="text-base sm:text-lg font-semibold text-gray-900">{formatCurrency(goal.current_amount + (liveStockValue || 0))}</p>
             )}
           </div>
           <div>
             <p className="text-sm text-gray-600">Target Amount</p>
-            <p className="text-lg font-semibold text-gray-900">{formatCurrency(goal.target_amount)}</p>
+            <p className="text-base sm:text-lg font-semibold text-gray-900">{formatCurrency(goal.target_amount)}</p>
           </div>
         </div>
 
@@ -270,39 +270,39 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
             <h4 className="text-sm font-medium text-gray-700 mb-2">Investment Breakdown</h4>
             <div className="space-y-2">
               {goal.mutual_fund_value && goal.mutual_fund_value >= 0 && (
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Mutual Funds</span>
+                    <div className="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
+                    <span className="text-xs sm:text-sm text-gray-600">Mutual Funds</span>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <span className="text-sm font-medium text-gray-900">{formatCurrency(goal.mutual_fund_value)}</span>
+                  <div className="flex flex-col items-start sm:items-end">
+                    <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.mutual_fund_value)}</span>
                     {/* MF XIRR below current value */}
-                    <span className={`text-xs mt-1 ${goal.xirrPercentage === undefined ? 'text-gray-400' : goal.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs sm:text-xs mt-1 ${goal.xirrPercentage === undefined ? 'text-gray-400' : goal.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {goal.formattedXIRR ? `XIRR: ${goal.formattedXIRR}` : 'XIRR: N/A'}
                     </span>
                   </div>
                 </div>
               )}
               {goal.nps_value && goal.nps_value > 0 && (
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
                   <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">NPS</span>
+                    <div className="w-3 h-3 bg-purple-500 rounded-full flex-shrink-0"></div>
+                    <span className="text-xs sm:text-sm text-gray-600">NPS</span>
                   </div>
-                  <span className="text-sm font-medium text-gray-900">{formatCurrency(goal.nps_value)}</span>
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.nps_value)}</span>
                 </div>
               )}
               {/* Stocks breakdown row */}
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
                 <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-sm text-gray-600">Stocks</span>
+                  <div className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
+                  <span className="text-xs sm:text-sm text-gray-600">Stocks</span>
                 </div>
                 {stockPricesLoading ? (
                   <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
                 ) : (
-                  <span className="text-sm font-medium text-gray-900">{formatCurrency(liveStockValue)}</span>
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(liveStockValue)}</span>
                 )}
               </div>
             </div>
@@ -331,8 +331,8 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
         {/* Remaining Amount */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">Remaining</span>
-            <span className={`text-sm font-semibold ${goal.target_amount - (goal.current_amount + (liveStockValue || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+            <span className="text-xs sm:text-sm text-gray-600">Remaining</span>
+            <span className={`text-xs sm:text-sm font-semibold ${goal.target_amount - (goal.current_amount + (liveStockValue || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
               {formatCurrency(goal.target_amount - (goal.current_amount + (liveStockValue || 0)))}
             </span>
           </div>

@@ -435,7 +435,7 @@ export default function Dashboard() {
                 </div>
                 <div className="ml-4 flex-1">
                   <p className="text-sm font-medium text-gray-600">MF Value</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(portfolioSummary.totalCurrentValue)}</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(portfolioSummary.totalCurrentValue)}</p>
                   {latestNavDate && (
                     <p className="text-xs text-gray-500 mt-1">
                       Last updated: {new Date(latestNavDate).toLocaleDateString('en-IN')}
@@ -470,7 +470,7 @@ export default function Dashboard() {
                 </div>
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-600">Stock Value</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
                     {stockLoading
                       ? <span className="inline-block w-16 h-6 bg-gray-200 rounded animate-pulse" />
                       : (typeof stockSummary?.totalStockValue === 'number'
@@ -487,7 +487,7 @@ export default function Dashboard() {
 
           {/* NPS Value Card */}
           {npsLoading ? (
-            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 flex-1 min-w-[250px]">
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6">
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <div className="w-6 h-6 bg-green-200 rounded animate-pulse"></div>
@@ -499,7 +499,7 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 flex-1 min-w-[250px] cursor-pointer hover:shadow-lg transition" onClick={() => router.push('/dashboard/nps')}>
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition" onClick={() => router.push('/dashboard/nps')}>
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
                   {/* Unique NPS icon: shield/retirement */}
@@ -509,7 +509,7 @@ export default function Dashboard() {
                 </div>
                 <div className="ml-4 flex-1">
                   <p className="text-sm font-medium text-gray-600">NPS Value</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
                     {npsLoading ? '...' : (typeof npsValue === 'number' ? formatCurrency(npsValue) : '-')}
                   </p>
                   {latestNpsNavDate && (
@@ -525,17 +525,29 @@ export default function Dashboard() {
 
         {/* Goals Section */}
         <div className="mb-8">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Financial Goals</h2>
-            <button
-              onClick={() => setShowGoalForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Goal
-            </button>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2 sm:mb-0">Financial Goals</h2>
+            {goals.length === 0 ? (
+              <button
+                onClick={() => setShowGoalForm(true)}
+                className="bg-blue-600 text-white w-full sm:w-auto px-4 py-2 text-base rounded-lg hover:bg-blue-700 flex items-center justify-center"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Goal
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowGoalForm(true)}
+                className="bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-blue-700 flex items-center w-full sm:w-auto"
+              >
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Goal
+              </button>
+            )}
           </div>
 
           {goalsLoading ? (
