@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
+import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 
 interface PortfolioHolding {
   id: string
@@ -82,12 +83,7 @@ export default function PortfolioDashboard() {
   }, [router])
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount)
+    return formatIndianNumberWithSuffix(amount)
   }
 
   const formatDate = (dateString: string) => {

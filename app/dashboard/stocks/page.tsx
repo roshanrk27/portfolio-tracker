@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import StockForm from '@/components/StockForm'
-import { fetchStockPrices, fetchStockPrice, calculateStockValue, formatStockValue, formatStockPrice } from '@/lib/stockUtils'
+import { fetchStockPrices, fetchStockPrice, calculateStockValue, formatStockPrice } from '@/lib/stockUtils'
+import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import { useState as useMenuState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import StaleDataIndicator from '@/components/StaleDataIndicator'
@@ -392,7 +393,7 @@ export default function StocksPage() {
               <p className="text-gray-600">Track your stock investments</p>
             </div>
             <div className="flex items-center space-x-4">
-              <StaleDataIndicator isStale={isDataStale} />
+              <StaleDataIndicator isStale={isDataStale} timestamp={stockPricesResponse?.timestamp} />
               <button
                 onClick={() => setShowStockForm(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
@@ -420,7 +421,7 @@ export default function StocksPage() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-600">Total Stock Portfolio Value</p>
                     <p className="text-2xl font-bold text-gray-900">
-                      {stockPricesLoading ? 'Loading...' : formatStockValue(getTotalPortfolioValue())}
+                      {stockPricesLoading ? 'Loading...' : formatIndianNumberWithSuffix(getTotalPortfolioValue())}
                     </p>
                   </div>
                 </div>
@@ -499,7 +500,7 @@ export default function StocksPage() {
                           {stockPricesLoading ? (
                             <div className="animate-pulse bg-gray-200 h-4 w-20 rounded"></div>
                           ) : (
-                            formatStockValue(stock.currentValue || 0)
+                            formatIndianNumberWithSuffix(stock.currentValue || 0)
                           )}
                         </div>
                       </td>

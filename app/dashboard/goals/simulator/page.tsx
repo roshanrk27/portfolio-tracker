@@ -1,23 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import GoalSimulatorForm, { SimulationFormData } from '@/components/GoalSimulatorForm'
 import GoalProjectionChart from '@/components/GoalProjectionChart'
 import StepUpEffectChart from '@/components/StepUpEffectChart'
 import SimulationSummaryTable from '@/components/SimulationSummaryTable'
-import { calculateCorpusWithStepUp, adjustForInflation } from '@/lib/goalSimulator'
+import { calculateCorpusWithStepUp, adjustForInflation, formatIndianNumberWithSuffix, formatDuration } from '@/lib/goalSimulator'
 //import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { supabase } from '@/lib/supabaseClient'
 import { getGoals, getAverageMonthlyInvestmentByGoal, getGoalWithProgress } from '@/lib/portfolioUtils'
 
 // Utility to format large numbers as 1K, 1M, 1B, etc.
-function formatLargeNumber(n: number | undefined): string {
-  if (typeof n !== 'number' || isNaN(n)) return '-'
-  if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
-  if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
-  return `₹${n.toLocaleString('en-IN')}`
-}
+// function formatLargeNumber(n: number | undefined): string {
+//   if (typeof n !== 'number' || isNaN(n)) return '-'
+//   if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
+//   if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
+//   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
+//   return `₹${n.toLocaleString('en-IN')}`
+// }
 
 interface Goal {
   id: string
@@ -62,6 +62,7 @@ export default function GoalSimulatorPage() {
   } | undefined>(undefined)
   const [inflationAdjusted, setInflationAdjusted] = useState(false)
   const [isPageLoading, setIsPageLoading] = useState(true)
+  const firstCardRef = useRef<HTMLDivElement>(null)
   // const supabase = createClientComponentClient()
 
   const handleSimulationSubmit = async (formData: SimulationFormData) => {
@@ -92,6 +93,30 @@ export default function GoalSimulatorPage() {
       setIsLoading(false)
     }
   }
+
+  // Focus on first card when simulation completes
+  useEffect(() => {
+    if (simulationResult && firstCardRef.current) {
+      // Add a small delay to ensure the DOM is updated
+      setTimeout(() => {
+        firstCardRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
+        })
+        
+        // Add a brief highlight effect
+        if (firstCardRef.current) {
+          firstCardRef.current.style.transition = 'box-shadow 0.3s ease'
+          firstCardRef.current.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.3)'
+          setTimeout(() => {
+            if (firstCardRef.current) {
+              firstCardRef.current.style.boxShadow = ''
+            }
+          }, 1000)
+        }
+      }, 100)
+    }
+  }, [simulationResult])
 
   // Fetch user goals
   useEffect(() => {
@@ -233,19 +258,36 @@ export default function GoalSimulatorPage() {
     
     xirrLevels.forEach(xirr => {
       stepUpLevels.forEach(stepUp => {
+        // If target amount is provided, ignore duration and calculate months needed
+        // If no target amount, use the provided duration
+        const monthsToUse = base.targetAmount ? undefined : lastFormData.months
+        
         const res = calculateCorpusWithStepUp(
           base.monthlySIP,
           xirr,
           stepUp,
           base.targetAmount,
-          undefined,
+          monthsToUse,
           lastFormData.existingCorpus
         )
+        
+        // Calculate total invested with step-up
+        let totalInvested = 0
+        let currentSIP = base.monthlySIP
+        const stepUpRate = stepUp / 100
+        
+        for (let m = 0; m < res.months; m++) {
+          if (m > 0 && m % 12 === 0) {
+            currentSIP *= (1 + stepUpRate)
+          }
+          totalInvested += currentSIP
+        }
+        
         scenarios.push({
           xirr,
           sip: base.monthlySIP,
           stepUp,
-          totalInvested: base.monthlySIP * res.months,
+          totalInvested: Math.round(totalInvested),
           goalDate: new Date(Date.now() + res.months * 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { year: 'numeric', month: 'short' }),
           finalCorpus: res.corpus,
         })
@@ -420,14 +462,18 @@ export default function GoalSimulatorPage() {
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Simulation Results</h2>
           {/* Summary */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-            <div className="bg-blue-50 rounded-lg p-4">
+            <div ref={firstCardRef} className="bg-blue-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-blue-800">
                 Final Corpus{inflationAdjusted ? ' (Real)' : ''}
               </h3>
               <div className="text-lg font-mono font-bold text-blue-900 text-center">
-                {formatLargeNumber(
-                  inflationAdjusted 
-                    ? adjustForInflation(simulationResult.summary.finalCorpus, simulationResult.summary.totalMonths, 6)
+                {formatIndianNumberWithSuffix(
+                  inflationAdjusted
+                    ? adjustForInflation(
+                        simulationResult.summary.finalCorpus,
+                        simulationResult.summary.totalMonths,
+                        6
+                      )
                     : simulationResult.summary.finalCorpus
                 )}
               </div>
@@ -435,19 +481,19 @@ export default function GoalSimulatorPage() {
             <div className="bg-cyan-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-cyan-800">Total Invested</h3>
               <div className="text-lg font-mono font-bold text-cyan-900 text-center">
-                {formatLargeNumber(simulationResult.summary.totalInvested)}
+                {formatIndianNumberWithSuffix(simulationResult.summary.totalInvested)}
               </div>
             </div>
             <div className="bg-green-50 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-green-800">Total Months</h3>
+              <h3 className="text-sm font-medium text-green-800">Duration</h3>
               <div className="text-lg font-mono font-bold text-green-900 text-center">
-                {simulationResult.summary.totalMonths}
+                {formatDuration(simulationResult.summary.totalMonths)}
               </div>
             </div>
             <div className="bg-purple-50 rounded-lg p-4">
               <h3 className="text-sm font-medium text-purple-800">Monthly SIP</h3>
               <div className="text-lg font-mono font-bold text-purple-900 text-center">
-                {formatLargeNumber(simulationResult.summary.monthlySIP)}
+                {formatIndianNumberWithSuffix(simulationResult.summary.monthlySIP)}
               </div>
             </div>
             <div className="bg-orange-50 rounded-lg p-4">

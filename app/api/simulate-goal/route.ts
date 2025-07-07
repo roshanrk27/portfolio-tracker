@@ -96,14 +96,14 @@ export async function POST(request: NextRequest) {
     // Determine simulation period
     let simulationMonths = prefilledData.months || 60 // Default to 5 years if not specified
 
-    // If target amount is provided, calculate months needed
-    if (prefilledData.targetAmount && !prefilledData.months) {
+    // If target amount is provided, calculate months needed (ignore user's duration)
+    if (prefilledData.targetAmount) {
       const result = calculateCorpusWithStepUp(
         prefilledData.monthlySIP!,
         prefilledData.xirr!,
         prefilledData.stepUp,
         prefilledData.targetAmount,
-        undefined,
+        undefined, // Ignore user's duration when target amount is provided
         prefilledData.existingCorpus
       )
       simulationMonths = result.months

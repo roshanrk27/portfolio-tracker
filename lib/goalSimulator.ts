@@ -279,4 +279,44 @@ export function calculateNominalValue(
     console.error('Error in calculateNominalValue:', error)
     return realValue
   }
+}
+
+/**
+ * Format a number in Indian notation with L/Cr suffix
+ * @param n - The number to format
+ * @returns Formatted string (e.g., ₹1.5L, ₹2.5Cr)
+ */
+export function formatIndianNumberWithSuffix(n: number): string {
+  if (typeof n !== 'number' || isNaN(n)) return '-'
+  const abs = Math.abs(n)
+  if (abs < 1e5) {
+    // Less than 1 lakh
+    return `₹${n.toLocaleString('en-IN')}`
+  } else if (abs < 1e7) {
+    // 1 lakh to less than 1 crore
+    return `₹${(n / 1e5).toFixed(abs >= 1e6 ? 2 : 1).replace(/\.0+$/, '')}L`
+  } else {
+    // 1 crore and above
+    return `₹${(n / 1e7).toFixed(2).replace(/\.0+$/, '')}Cr`
+  }
+}
+
+/**
+ * Format duration from months to "Xyr Ym" format
+ * @param months - Number of months
+ * @returns Formatted string (e.g., "2yr 1m", "1yr", "6m")
+ */
+export function formatDuration(months: number): string {
+  if (months === 0) return '0m'
+  
+  const years = Math.floor(months / 12)
+  const remainingMonths = months % 12
+  
+  if (years === 0) {
+    return `${remainingMonths}m`
+  } else if (remainingMonths === 0) {
+    return `${years}yr`
+  } else {
+    return `${years}yr ${remainingMonths}m`
+  }
 } 

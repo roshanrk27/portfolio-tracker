@@ -1,14 +1,14 @@
 'use client'
 
-import { adjustForInflation } from '@/lib/goalSimulator'
+import { adjustForInflation, formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 
 // Utility to format large numbers as 1K, 1M, 1B, etc.
-function formatLargeNumber(n: number): string {
-  if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
-  if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
-  return `₹${n.toLocaleString('en-IN')}`
-}
+// function formatLargeNumber(n: number): string {
+//   if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
+//   if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
+//   if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
+//   return `₹${n.toLocaleString('en-IN')}`
+// }
 
 interface SimulationScenario {
   xirr: number
@@ -68,12 +68,12 @@ export default function SimulationSummaryTable({ scenarios, title = 'Simulation 
               return (
                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="p-3 text-gray-900">{s.xirr.toFixed(2)}</td>
-                  <td className="p-3 text-gray-900">{formatLargeNumber(s.sip)}</td>
+                  <td className="p-3 text-gray-900">{formatIndianNumberWithSuffix(s.sip)}</td>
                   <td className="p-3 text-gray-900">{s.stepUp}%</td>
-                  <td className="p-3 text-gray-900">{formatLargeNumber(s.totalInvested)}</td>
+                  <td className="p-3 text-gray-900">{formatIndianNumberWithSuffix(s.totalInvested)}</td>
                   <td className="p-3 text-gray-900">{s.goalDate}</td>
                   <td className="p-3 font-semibold text-blue-900">
-                    {formatLargeNumber(realCorpus)}
+                    {formatIndianNumberWithSuffix(realCorpus)}
                     {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
                   </td>
                 </tr>

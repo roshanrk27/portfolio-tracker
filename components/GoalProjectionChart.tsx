@@ -1,6 +1,6 @@
 'use client'
 
-import { adjustForInflation } from '@/lib/goalSimulator'
+import { adjustForInflation, formatIndianNumberWithSuffix, formatDuration } from '@/lib/goalSimulator'
 
 interface ProjectionPoint {
   date: string
@@ -67,10 +67,7 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
 
   // Format large numbers for Y-axis
   function formatLargeNumber(n: number): string {
-    if (n >= 1_000_000_000) return `₹${(n / 1_000_000_000).toFixed(2)}B`
-    if (n >= 1_000_000) return `₹${(n / 1_000_000).toFixed(2)}M`
-    if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`
-    return `₹${n.toLocaleString('en-IN')}`
+    return formatIndianNumberWithSuffix(n)
   }
 
   // Scaling
@@ -166,7 +163,7 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
           {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
         </div>
         <div className="text-gray-600">
-          <span className="font-medium">Duration:</span> {data[data.length - 1]?.months || 0} months ({new Date(data[data.length - 1]?.date || Date.now()).toLocaleDateString('en-IN', { month: '2-digit', year: 'numeric' }).replace('/', '-')})
+          <span className="font-medium">Duration:</span> {formatDuration(data[data.length - 1]?.months || 0)} ({new Date(data[data.length - 1]?.date || Date.now()).toLocaleDateString('en-IN', { month: '2-digit', year: 'numeric' }).replace('/', '-')})
         </div>
         <div className="text-gray-600">
           <span className="font-medium">Growth:</span> {growthPct}%
@@ -193,7 +190,7 @@ export default function GoalProjectionChart({ data, title = "Corpus Projection",
                     ₹{point.corpus.toLocaleString('en-IN')}
                     {inflationAdjusted && <span className="text-xs text-gray-500 ml-1">(Real)</span>}
                   </td>
-                  <td className="p-3 text-right text-gray-500">{point.months}</td>
+                  <td className="p-3 text-right text-gray-500">{formatDuration(point.months)}</td>
                 </tr>
               ))}
             </tbody>

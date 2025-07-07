@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import { getGoalMappings, getGoalXIRR } from '@/lib/portfolioUtils'
 import { calculateSchemeXIRR, formatXIRR } from '@/lib/xirr'
 
@@ -323,12 +324,7 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
   }, [goal.id])
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(amount)
+    return formatIndianNumberWithSuffix(amount)
   }
 
   const formatNumber = (num: number) => {

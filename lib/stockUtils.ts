@@ -1,5 +1,7 @@
 // Utility functions for stock price fetching
 
+import { formatIndianNumberWithSuffix } from './goalSimulator'
+
 export interface StockPrice {
   symbol: string
   price: number | null
@@ -195,12 +197,7 @@ export function formatStockPrice(price: number | null, currency: string = 'INR')
 
 // Format stock value for display
 export function formatStockValue(value: number): string {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(value)
+  return formatIndianNumberWithSuffix(value)
 }
 
 // Get exchange display name

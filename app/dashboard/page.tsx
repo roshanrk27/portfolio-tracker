@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { getPortfolioSummary, getGoals, getGoalMappings, getLatestNavDate, fetchGoalsWithDetails, batchCalculateXIRR } from '@/lib/portfolioUtils'
+import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
 import { useQuery } from '@tanstack/react-query'
@@ -380,12 +381,7 @@ export default function Dashboard() {
   }
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    }).format(amount)
+    return formatIndianNumberWithSuffix(amount)
   }
 
   // Removed unused handleNavRefresh function
