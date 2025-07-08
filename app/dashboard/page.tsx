@@ -9,6 +9,7 @@ import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback } from 'react';
+import Link from 'next/link'
 
 interface StockSummary {
   totalStocks: number
@@ -426,25 +427,26 @@ export default function Dashboard() {
               </div>
             </div>
           ) : portfolioSummary ? (
-            <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg shadow p-6 relative">
-              <div className="flex items-center">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <div className="ml-4 flex-1">
-                  <p className="text-sm font-medium text-gray-600">MF Value</p>
-                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(portfolioSummary.totalCurrentValue)}</p>
-                  {latestNavDate && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Last updated: {new Date(latestNavDate).toLocaleDateString('en-IN')}
-                    </p>
-                  )}
+            <Link href="/dashboard/portfolio" className="block cursor-pointer">
+              <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg shadow p-6 relative hover:shadow-lg transition">
+                <div className="flex items-center">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                  <div className="ml-4 flex-1">
+                    <p className="text-sm font-medium text-gray-600">MF Value</p>
+                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">{formatCurrency(portfolioSummary.totalCurrentValue)}</p>
+                    {latestNavDate && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Last updated: {new Date(latestNavDate).toLocaleDateString('en-IN')}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-
-            </div>
+            </Link>
           ) : null}
 
           {/* Stock Value Card */}
@@ -461,28 +463,30 @@ export default function Dashboard() {
               </div>
             </div>
           ) : stockSummary ? (
-            <div className="bg-purple-50 border-l-4 border-purple-500 rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Stock Value</p>
-                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
-                    {stockLoading
-                      ? <span className="inline-block w-16 h-6 bg-gray-200 rounded animate-pulse" />
-                      : (typeof stockSummary?.totalStockValue === 'number'
-                          ? formatCurrency(stockSummary.totalStockValue)
-                          : '-')}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Delayed by 30 minutes
-                  </p>
+            <Link href="/dashboard/stocks" className="block cursor-pointer">
+              <div className="bg-purple-50 border-l-4 border-purple-500 rounded-lg shadow p-6 hover:shadow-lg transition">
+                <div className="flex items-center">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600">Stock Value</p>
+                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
+                      {stockLoading
+                        ? <span className="inline-block w-16 h-6 bg-gray-200 rounded animate-pulse" />
+                        : (typeof stockSummary?.totalStockValue === 'number'
+                            ? formatCurrency(stockSummary.totalStockValue)
+                            : '-')}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Delayed by 30 minutes
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            </Link>
           ) : null}
 
           {/* NPS Value Card */}
@@ -499,27 +503,29 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition" onClick={() => router.push('/dashboard/nps')}>
-              <div className="flex items-center">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  {/* Unique NPS icon: shield/retirement */}
-                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l8 4v5c0 5.25-3.5 9.75-8 11-4.5-1.25-8-5.75-8-11V7l8-4z" />
-                  </svg>
-                </div>
-                <div className="ml-4 flex-1">
-                  <p className="text-sm font-medium text-gray-600">NPS Value</p>
-                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
-                    {npsLoading ? '...' : (typeof npsValue === 'number' ? formatCurrency(npsValue) : '-')}
-                  </p>
-                  {latestNpsNavDate && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Last updated: {new Date(latestNpsNavDate).toLocaleDateString('en-IN')}
+            <Link href="/dashboard/nps" className="block cursor-pointer">
+              <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 hover:shadow-lg transition">
+                <div className="flex items-center">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    {/* Unique NPS icon: shield/retirement */}
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3l8 4v5c0 5.25-3.5 9.75-8 11-4.5-1.25-8-5.75-8-11V7l8-4z" />
+                    </svg>
+                  </div>
+                  <div className="ml-4 flex-1">
+                    <p className="text-sm font-medium text-gray-600">NPS Value</p>
+                    <p className="text-lg sm:text-xl md:text-2xl font-bold text-gray-900">
+                      {npsLoading ? '...' : (typeof npsValue === 'number' ? formatCurrency(npsValue) : '-')}
                     </p>
-                  )}
+                    {latestNpsNavDate && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Last updated: {new Date(latestNpsNavDate).toLocaleDateString('en-IN')}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            </Link>
           )}
         </div>
 

@@ -34,7 +34,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <h1 className="text-xl font-semibold" style={{ color: '#222' }}>
+            <h1 className="font-semibold text-base sm:text-lg md:text-xl lg:text-2xl" style={{ color: '#222' }}>
               Investment Goals Tracker
             </h1>
           </div>
