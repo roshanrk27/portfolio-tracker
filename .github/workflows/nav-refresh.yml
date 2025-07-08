@@ -6,6 +6,8 @@ on:
     - cron: '0 5 * * 1-5'
     # Runs at 7:00 PM UTC Monday (for NPS)
     - cron: '0 19 * * 1'
+  workflow_dispatch:        # allows manual triggering
+
 
 jobs:
   refresh-nav:
