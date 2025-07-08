@@ -150,11 +150,11 @@ export default function GoalForm({ onGoalAdded, onCancel }: GoalFormProps) {
               name="name"
               value={formData.name}
               onChange={handleInputChange}
-              onBlur={handleBlur}
               placeholder="e.g., Buy a house, Child's education"
-              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder-gray-400 transition-colors ${
+              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 fieldErrors.name ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-gray-400'
-              }`}
+              } placeholder-gray-500`}
+              style={{ background: '#E8F0FE', color: '#1A202C' }}
               required
             />
             {fieldErrors.name && (
@@ -175,9 +175,10 @@ export default function GoalForm({ onGoalAdded, onCancel }: GoalFormProps) {
               onBlur={handleBlur}
               placeholder="Optional description of your goal"
               rows={3}
-              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder-gray-400 resize-none transition-colors ${
+              className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-colors ${
                 fieldErrors.description ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-gray-400'
-              }`}
+              } placeholder-gray-500`}
+              style={{ background: '#E8F0FE', color: '#1A202C' }}
             />
             {fieldErrors.description && (
               <p className="mt-2 text-sm text-red-600">{fieldErrors.description}</p>
@@ -198,9 +199,10 @@ export default function GoalForm({ onGoalAdded, onCancel }: GoalFormProps) {
               onBlur={handleBlur}
               placeholder="1000000"
               min="1"
-              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white placeholder-gray-400 transition-colors ${
+              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 fieldErrors.targetAmount ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-gray-400'
-              }`}
+              } placeholder-gray-500`}
+              style={{ background: '#E8F0FE', color: '#1A202C' }}
               required
             />
             {fieldErrors.targetAmount && (
@@ -220,10 +222,10 @@ export default function GoalForm({ onGoalAdded, onCancel }: GoalFormProps) {
               value={formData.targetDate}
               onChange={handleInputChange}
               onBlur={handleBlur}
-              min={new Date().toISOString().split('T')[0]}
-              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors ${
+              className={`w-full h-12 px-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors ${
                 fieldErrors.targetDate ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 hover:border-gray-400'
-              }`}
+              } placeholder-gray-500`}
+              style={{ background: '#E8F0FE', color: '#1A202C' }}
               required
             />
             {fieldErrors.targetDate && (

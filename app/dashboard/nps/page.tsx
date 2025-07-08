@@ -307,17 +307,17 @@ export default function NPSDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6">
+    <div className="min-h-screen bg-gray-50 w-full">
+      <div className="w-full px-2 sm:px-4 md:px-6 p-6">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">NPS (National Pension System)</h1>
+          <h1 className="font-bold text-lg sm:text-2xl md:text-3xl text-gray-900 mb-2">NPS (National Pension System)</h1>
           <p className="text-gray-600">Your NPS holdings and performance</p>
         </div>
 
         {/* Total NPS Value Card */}
-        <div className="mb-8">
-          <div className="flex flex-wrap gap-4">
-            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 flex-1 min-w-[250px]">
+        <div className="mb-8 w-full">
+          <div className="flex flex-wrap gap-4 w-full">
+            <div className="bg-green-50 border-l-4 border-green-500 rounded-lg shadow p-6 flex-1 min-w-[200px] w-full">
               <div className="flex items-center">
                 <div className="p-2 bg-green-100 rounded-lg">
                   <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -334,9 +334,9 @@ export default function NPSDashboard() {
         </div>
 
         {/* Holdings Table */}
-        <div className="bg-white rounded-lg shadow-lg p-8 mb-8 border border-gray-200">
+        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6 md:p-8 mb-8 border border-gray-200 w-full overflow-x-auto">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-gray-800">Current Holdings</h2>
+            <h2 className="text-base sm:text-lg md:text-xl font-bold text-gray-800">Current Holdings</h2>
             <div className="flex gap-2">
               <button
                 onClick={openModal}
@@ -362,33 +362,33 @@ export default function NPSDashboard() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fund Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fund Code</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAV</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
-                    <th className="px-6 py-3"></th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fund Name</th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fund Code</th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NAV</th>
+                    <th className="px-2 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Value</th>
+                    <th className="px-2 sm:px-6 py-3"></th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-200 text-xs sm:text-sm">
                   {holdingsWithValue.map((h) => (
                     <tr key={h.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">{h.nps_funds?.fund_name || h.fund_code}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-blue-800 bg-blue-50 rounded">{h.fund_code}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 font-medium">
+                      <td className="px-2 sm:px-6 py-4 whitespace-normal truncate text-sm font-semibold text-gray-900 max-w-[120px]">{h.nps_funds?.fund_name || h.fund_code}</td>
+                      <td className="px-2 sm:px-6 py-4 whitespace-normal truncate text-sm font-mono text-blue-800 bg-blue-50 rounded max-w-[80px]">{h.fund_code}</td>
+                      <td className="px-2 sm:px-6 py-4 whitespace-normal truncate text-sm text-gray-700 font-medium max-w-[80px]">
                         {h.units}
                         {h.as_of_date && (
                           <div className="text-xs text-gray-400 mt-1">as on {h.as_of_date}</div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <td className="px-2 sm:px-6 py-4 whitespace-normal truncate text-sm text-gray-700 max-w-[80px]">
                         {h.nav ? formatCurrency(h.nav) : '-'}
                         {h.nav_date && (
                           <div className="text-xs text-gray-400 mt-1">{h.nav_date}</div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold">{h.nav ? formatCurrency(h.current_value) : '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <td className="px-2 sm:px-6 py-4 whitespace-normal truncate text-sm text-gray-900 font-bold max-w-[100px]">{h.nav ? formatCurrency(h.current_value) : '-'}</td>
+                      <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-right">
                         <button
                           className="text-blue-600 hover:underline text-sm font-semibold"
                           onClick={() => openEditModal(h)}
@@ -425,6 +425,7 @@ export default function NPSDashboard() {
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md mb-2"
+                    style={{ background: '#E8F0FE', color: '#1A202C' }}
                     autoComplete="off"
                     disabled={!!selectedFund}
                   />
@@ -467,6 +468,7 @@ export default function NPSDashboard() {
                     value={units}
                     onChange={e => setUnits(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    style={{ background: '#E8F0FE', color: '#1A202C' }}
                     required
                   />
                 </div>
@@ -477,6 +479,7 @@ export default function NPSDashboard() {
                     value={asOfDate}
                     onChange={e => setAsOfDate(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    style={{ background: '#E8F0FE', color: '#1A202C' }}
                     required
                   />
                 </div>
@@ -515,6 +518,7 @@ export default function NPSDashboard() {
                     value={editUnits}
                     onChange={e => setEditUnits(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    style={{ background: '#E8F0FE', color: '#1A202C' }}
                     required
                   />
                 </div>
@@ -525,6 +529,7 @@ export default function NPSDashboard() {
                     value={editDate}
                     onChange={e => setEditDate(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    style={{ background: '#E8F0FE', color: '#1A202C' }}
                     required
                   />
                 </div>

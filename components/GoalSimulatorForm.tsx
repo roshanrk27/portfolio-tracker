@@ -136,7 +136,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('monthlySIP', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.monthlySIP ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter monthly SIP amount"
             min="0"
             step="1"
@@ -165,7 +166,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('xirr', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.xirr ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter expected XIRR"
             min="0"
             max="50"
@@ -195,7 +197,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('stepUp', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.stepUp ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter yearly step-up percentage"
             min="0"
             max="100"
@@ -225,7 +228,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('targetAmount', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.targetAmount ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter target amount"
             min="0"
             step="1"
@@ -254,7 +258,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('existingCorpus', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.existingCorpus ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter existing corpus amount"
             min="0"
             step="1"
@@ -283,7 +288,8 @@ export default function GoalSimulatorForm({
             onChange={(e) => handleInputChange('months', e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               errors.months ? 'border-red-500' : 'border-gray-300'
-            }`}
+            } placeholder-gray-500`}
+            style={{ background: '#E8F0FE', color: '#1A202C' }}
             placeholder="Enter duration in months"
             min="1"
             max="600"
