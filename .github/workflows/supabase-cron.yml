@@ -11,4 +11,4 @@ jobs:
     steps:
       - name: Call Edge Function
         run: |
-          curl -L -X POST 'https://mdnumdvxkohtsvlffbob.supabase.co/functions/v1/prefetch-stock-prices' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kbnVtZHZ4a29odHN2bGZmYm9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyMDc0NjUsImV4cCI6MjA2Njc4MzQ2NX0.p40EZ01yST5UKd7ZkWQtyLiXfEcC-DqWpwZzziokwAs' -H 'Content-Type: application/json' --data '{"name":"Functions"}'
+          curl -L -X POST 'https://mdnumdvxkohtsvlffbob.supabase.co/functions/v1/prefetch-stock-prices' -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" -H 'Content-Type: application/json' --data '{"name":"Functions"}'
