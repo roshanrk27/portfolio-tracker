@@ -15,10 +15,7 @@ jobs:
     steps:
       - name: Call Mutual Fund NAV Refresh
         run: |
-          curl -X POST "https://sipgoals.in/api/refresh-nav" \
-            -H "x-api-key: ${{ secrets.NAV_REFRESH_API_KEY }}"
+          curl -X POST "https://sipgoals.in/api/refresh-nav" -H "x-api-key: ${{ secrets.NAV_REFRESH_API_KEY }}"
       - name: Call NPS NAV Refresh (Monday only)
-        if: github.event.schedule == '0 19 * * 1'
         run: |
-          curl -X POST "https://sipgoals.in/api/refresh-nps-nav" \
-            -H "x-api-key: ${{ secrets.NAV_REFRESH_API_KEY }}"
+          curl -X POST "https://sipgoals.in/api/refresh-nps-nav" -H "x-api-key: ${{ secrets.NAV_REFRESH_API_KEY }}"
