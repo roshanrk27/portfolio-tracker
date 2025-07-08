@@ -88,3 +88,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, logs }, { status: 500 })
   }
 } 
+
+export async function GET(request: NextRequest) {
+  return POST(request)
+} 

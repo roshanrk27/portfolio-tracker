@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/refresh-nav",
-      "schedule": "0 22 * * 1-5"
+      "schedule": "0 05 * * 1-5"
     },
     {
       "path": "/api/refresh-nps-nav", 
