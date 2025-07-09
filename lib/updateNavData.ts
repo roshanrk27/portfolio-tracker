@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
-import { refreshPortfolioNav } from './portfolioUtils'
+import { refreshPortfolioNav, refreshAllUsersPortfolios } from './portfolioUtils'
 
 // Create server-side Supabase client with service role key
 const supabaseServer = createClient(
@@ -60,8 +60,8 @@ export async function updateNavData(userId?: string) {
     console.log('Successfully updated NAV data for', navEntries.length, 'schemes')
     
     // Now refresh portfolio values with the updated NAV data
-    // Note: Portfolio refresh requires a specific user ID, so we'll skip it if not provided
     if (userId) {
+      // Single user refresh
       console.log('Starting portfolio value refresh for user:', userId)
       const refreshResult = await refreshPortfolioNav(userId)
       
@@ -88,14 +88,34 @@ export async function updateNavData(userId?: string) {
         }
       }
     } else {
-      console.log('No user ID provided, skipping portfolio refresh')
-      return {
-        success: true,
-        count: navEntries.length,
-        date: today,
-        message: `Updated NAV data for ${navEntries.length} schemes (portfolio refresh skipped - no user ID provided)`,
-        navUpdated: navEntries.length,
-        portfolioRefreshed: 0
+      // All users refresh
+      console.log('Starting portfolio value refresh for all users...')
+      const allUsersRefreshResult = await refreshAllUsersPortfolios()
+      
+      if (allUsersRefreshResult.success) {
+        console.log(`Successfully refreshed portfolio values for ${allUsersRefreshResult.successfulUpdates} users`)
+        return {
+          success: true,
+          count: navEntries.length,
+          date: today,
+          message: `Updated NAV data for ${navEntries.length} schemes and refreshed portfolio values for ${allUsersRefreshResult.successfulUpdates} users`,
+          navUpdated: navEntries.length,
+          portfolioRefreshed: allUsersRefreshResult.successfulUpdates,
+          allUsersRefreshed: allUsersRefreshResult.totalUsers,
+          allUsersErrors: allUsersRefreshResult.errors
+        }
+      } else {
+        console.error('All users portfolio refresh failed:', allUsersRefreshResult.errors)
+        return {
+          success: true,
+          count: navEntries.length,
+          date: today,
+          message: `Updated NAV data for ${navEntries.length} schemes, but portfolio refresh had issues: ${allUsersRefreshResult.failedUpdates} users failed`,
+          navUpdated: navEntries.length,
+          portfolioRefreshed: allUsersRefreshResult.successfulUpdates,
+          allUsersRefreshed: allUsersRefreshResult.totalUsers,
+          allUsersErrors: allUsersRefreshResult.errors
+        }
       }
     }
     

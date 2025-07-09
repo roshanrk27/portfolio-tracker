@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
+import { refreshPortfolioNav } from '@/lib/portfolioUtils'
 
 // Create server-side Supabase client with service role key
 const supabaseServer = createClient(
@@ -92,7 +93,33 @@ export async function parseUploadedFile(uploadId: string) {
       console.error('Status update error:', updateError)
     }
 
-    return { success: true, transactions, count: transactions.length }
+    // Refresh portfolio for the user
+    let portfolioRefreshed = false
+    let portfolioError = null
+    
+    try {
+      console.log('Starting portfolio refresh for user:', upload.user_id)
+      const refreshResult = await refreshPortfolioNav(upload.user_id)
+      
+      if (refreshResult.success) {
+        console.log('Successfully refreshed portfolio:', refreshResult.updated, 'entries updated')
+        portfolioRefreshed = true
+      } else {
+        console.error('Portfolio refresh failed:', refreshResult.error)
+        portfolioError = refreshResult.error
+      }
+    } catch (error) {
+      console.error('Error during portfolio refresh:', error)
+      portfolioError = error instanceof Error ? error.message : 'Unknown error'
+    }
+
+    return { 
+      success: true, 
+      transactions, 
+      count: transactions.length,
+      portfolioRefreshed,
+      portfolioError
+    }
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'

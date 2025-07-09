@@ -252,6 +252,174 @@ export async function refreshPortfolioNav(userId: string) {
   }
 }
 
+// Refresh NAV data for all users with portfolio entries
+export async function refreshAllUsersPortfolios() {
+  try {
+    console.log('Starting bulk portfolio NAV refresh for all users...')
+    
+    // Get all unique user IDs from current_portfolio table
+    const { data: portfolioEntries, error: portfolioError } = await supabaseServer
+      .from('current_portfolio')
+      .select('user_id')
+      .order('user_id')
+
+    if (portfolioError) {
+      console.error('Error fetching portfolio entries for bulk refresh:', portfolioError)
+      return {
+        success: false,
+        totalUsers: 0,
+        successfulUpdates: 0,
+        failedUpdates: 0,
+        errors: [portfolioError.message]
+      }
+    }
+
+    if (!portfolioEntries || portfolioEntries.length === 0) {
+      console.log('No portfolio entries found for bulk refresh')
+      return {
+        success: true,
+        totalUsers: 0,
+        successfulUpdates: 0,
+        failedUpdates: 0,
+        errors: []
+      }
+    }
+
+    // Get unique user IDs
+    const uniqueUserIds = Array.from(new Set(portfolioEntries.map(entry => entry.user_id)))
+    console.log(`Found ${uniqueUserIds.length} unique users with portfolio entries`)
+
+    let successfulUpdates = 0
+    let failedUpdates = 0
+    const errors: string[] = []
+
+    // Process each user
+    for (const userId of uniqueUserIds) {
+      try {
+        console.log(`Processing portfolio refresh for user: ${userId}`)
+        
+        // Get all portfolio entries for this user
+        const { data: userPortfolio, error: userPortfolioError } = await supabaseServer
+          .from('current_portfolio')
+          .select('*')
+          .eq('user_id', userId)
+
+        if (userPortfolioError) {
+          const errorMsg = `Error fetching portfolio for user ${userId}: ${userPortfolioError.message}`
+          console.error(errorMsg)
+          errors.push(errorMsg)
+          failedUpdates++
+          continue
+        }
+
+        if (!userPortfolio || userPortfolio.length === 0) {
+          console.log(`No portfolio entries found for user: ${userId}`)
+          continue
+        }
+
+        let userUpdatedCount = 0
+
+        // Update each portfolio entry with latest NAV
+        for (const entry of userPortfolio) {
+          let navFound = false
+          
+          // First try by ISIN if available
+          if (entry.isin && entry.isin.trim() !== '') {
+            const { data: navByIsin } = await supabaseServer
+              .from('nav_data')
+              .select('nav_value, nav_date')
+              .or(`isin_div_payout.eq.${entry.isin},isin_div_reinvestment.eq.${entry.isin}`)
+              .order('nav_date', { ascending: false })
+              .limit(1)
+            
+            if (navByIsin && navByIsin.length > 0) {
+              const { error: updateError } = await supabaseServer
+                .from('current_portfolio')
+                .update({
+                  current_nav: navByIsin[0].nav_value,
+                  last_nav_update_date: navByIsin[0].nav_date,
+                  current_value: navByIsin[0].nav_value * parseFloat(entry.latest_unit_balance || '0'),
+                  return_amount: (navByIsin[0].nav_value * parseFloat(entry.latest_unit_balance || '0')) - parseFloat(entry.total_invested || '0'),
+                  return_percentage: parseFloat(entry.total_invested || '0') > 0 
+                    ? ((navByIsin[0].nav_value * parseFloat(entry.latest_unit_balance || '0')) - parseFloat(entry.total_invested || '0')) / parseFloat(entry.total_invested || '0') * 100
+                    : 0,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', entry.id)
+
+              if (!updateError) {
+                userUpdatedCount++
+                navFound = true
+              }
+            }
+          }
+
+          // Fallback to scheme_name lookup if ISIN lookup failed
+          if (!navFound) {
+            const { data: navByScheme } = await supabaseServer
+              .from('nav_data')
+              .select('nav_value, nav_date')
+              .ilike('scheme_name', `%${entry.scheme_name}%`)
+              .order('nav_date', { ascending: false })
+              .limit(1)
+
+            if (navByScheme && navByScheme.length > 0) {
+              const { error: updateError } = await supabaseServer
+                .from('current_portfolio')
+                .update({
+                  current_nav: navByScheme[0].nav_value,
+                  last_nav_update_date: navByScheme[0].nav_date,
+                  current_value: navByScheme[0].nav_value * parseFloat(entry.latest_unit_balance || '0'),
+                  return_amount: (navByScheme[0].nav_value * parseFloat(entry.latest_unit_balance || '0')) - parseFloat(entry.total_invested || '0'),
+                  return_percentage: parseFloat(entry.total_invested || '0') > 0 
+                    ? ((navByScheme[0].nav_value * parseFloat(entry.latest_unit_balance || '0')) - parseFloat(entry.total_invested || '0')) / parseFloat(entry.total_invested || '0') * 100
+                    : 0,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', entry.id)
+
+              if (!updateError) {
+                userUpdatedCount++
+              }
+            }
+          }
+        }
+
+        console.log(`Successfully updated ${userUpdatedCount} portfolio entries for user: ${userId}`)
+        successfulUpdates++
+
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        const errorMsg = `Error processing portfolio refresh for user ${userId}: ${errorMessage}`
+        console.error(errorMsg)
+        errors.push(errorMsg)
+        failedUpdates++
+      }
+    }
+
+    console.log(`Bulk portfolio refresh completed. Success: ${successfulUpdates}, Failed: ${failedUpdates}`)
+
+    return {
+      success: failedUpdates === 0,
+      totalUsers: uniqueUserIds.length,
+      successfulUpdates,
+      failedUpdates,
+      errors
+    }
+
+  } catch (error: unknown) {
+    console.error('Error in refreshAllUsersPortfolios:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return {
+      success: false,
+      totalUsers: 0,
+      successfulUpdates: 0,
+      failedUpdates: 0,
+      errors: [errorMessage]
+    }
+  }
+}
+
 // Get portfolio entries with missing NAV data
 export async function getPortfolioWithMissingNav(userId: string) {
   try {

@@ -11,6 +11,7 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
   const [parsingStatus, setParsingStatus] = useState('')
+  const [portfolioStatus, setPortfolioStatus] = useState('')
   const [fileError, setFileError] = useState('')
   const [earliestDate, setEarliestDate] = useState<string | null>(null)
   const [latestDate, setLatestDate] = useState<string | null>(null)
@@ -53,6 +54,7 @@ export default function UploadPage() {
     setFileError('')
     setUploadStatus('')
     setParsingStatus('')
+    setPortfolioStatus('')
     
     if (file) {
       try {
@@ -72,6 +74,7 @@ export default function UploadPage() {
     setFileError('')
     setUploadStatus('')
     setParsingStatus('')
+    setPortfolioStatus('')
     // Reset file input
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     if (fileInput) {
@@ -87,6 +90,7 @@ export default function UploadPage() {
     setUploading(true)
     setUploadStatus('Uploading file...')
     setParsingStatus('')
+    setPortfolioStatus('')
 
     try {
       // Get current user
@@ -129,16 +133,26 @@ export default function UploadPage() {
       setUploadStatus('File uploaded successfully!')
       
       // Parse the uploaded file
-      setParsingStatus('Parsing file...')
+      setParsingStatus('Parsing transactions...')
       const parseResult = await parseUploadedFile(uploadData.id)
       
       if (parseResult.success) {
         setParsingStatus(`Parsed ${parseResult.count} transactions successfully!`)
         
+        // Handle portfolio refresh status
+        if (parseResult.portfolioRefreshed) {
+          setPortfolioStatus('Portfolio values updated with latest NAV data!')
+        } else if (parseResult.portfolioError) {
+          setPortfolioStatus('Portfolio value calculation failed. Will update during next NAV refresh.')
+          console.error('Portfolio refresh error:', parseResult.portfolioError)
+        } else {
+          setPortfolioStatus('Portfolio refresh completed.')
+        }
+        
         // Navigate to mutual funds page after successful upload and parsing
         setTimeout(() => {
           router.push('/dashboard/portfolio')
-        }, 2000) // Give user 2 seconds to see the success message
+        }, 3000) // Give user 3 seconds to see all status messages
       } else {
         setParsingStatus(`Parsing failed: ${parseResult.error}`)
       }
@@ -223,27 +237,32 @@ export default function UploadPage() {
                 </div>
               )}
 
-              {uploadStatus && (
-                <div className={`mb-4 p-3 rounded-lg border text-center ${
-                  uploadStatus.includes('successfully') 
-                    ? 'bg-green-50 text-green-700 border-green-200' 
-                    : uploadStatus.includes('failed') 
-                      ? 'bg-red-50 text-red-700 border-red-200' 
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                }`}>
-                  {uploadStatus}
-                </div>
-              )}
-
-              {parsingStatus && (
-                <div className={`mb-6 p-3 rounded-lg border text-center ${
-                  parsingStatus.includes('successfully') 
-                    ? 'bg-green-50 text-green-700 border-green-200' 
-                    : parsingStatus.includes('failed') 
-                      ? 'bg-red-50 text-red-700 border-red-200' 
-                      : 'bg-blue-50 text-blue-700 border-blue-200'
-                }`}>
-                  {parsingStatus}
+              {/* Status Messages */}
+              {(uploadStatus || parsingStatus || portfolioStatus) && (
+                <div className="mb-6 space-y-2">
+                  {uploadStatus && (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">{uploadStatus}</p>
+                    </div>
+                  )}
+                  {parsingStatus && (
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-sm text-yellow-800">{parsingStatus}</p>
+                    </div>
+                  )}
+                  {portfolioStatus && (
+                    <div className={`p-3 border rounded-lg ${
+                      portfolioStatus.includes('failed') 
+                        ? 'bg-orange-50 border-orange-200' 
+                        : 'bg-green-50 border-green-200'
+                    }`}>
+                      <p className={`text-sm ${
+                        portfolioStatus.includes('failed') 
+                          ? 'text-orange-800' 
+                          : 'text-green-800'
+                      }`}>{portfolioStatus}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -254,7 +273,7 @@ export default function UploadPage() {
                   className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-200 disabled:text-gray-400 text-white font-semibold rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
                   aria-label="Upload file"
                 >
-                  {uploading ? 'Uploading...' : 'Upload File'}
+                  {uploading ? 'Processing...' : 'Upload File'}
                 </button>
                 <button
                   type="button"
@@ -273,6 +292,7 @@ export default function UploadPage() {
                   <li>Upload your CAMS Consolidated MF Transaction Statement in CSV format</li>
                   <li>Make sure the file contains transaction data with scheme names, amounts, and dates</li>
                   <li>File will be processed to extract your mutual fund transactions</li>
+                  <li>Portfolio values will be automatically updated with latest NAV data</li>
                   <li>Maximum file size: 10MB</li>
                 </ul>
               </div>
@@ -280,74 +300,47 @@ export default function UploadPage() {
           </div>
 
           {/* Instructions Section */}
-          <div className="lg:pl-4">
-            <div className="bg-white rounded-lg shadow-md p-8 h-fit">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">How to Get Your CAMS Statement</h2>
-              
-              <div className="space-y-6">
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <h3 className="font-semibold text-blue-900 mb-2">Step 1: Generate CAS Statement</h3>
-                  <p className="text-sm text-blue-800 mb-3">
-                    Generate a detailed CAS statement from{' '}
-                    <a 
-                      href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 underline font-medium"
-                    >
-                      CAMS Online
-                    </a>
-                  </p>
-                  <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                    <li>• Choose specific time frame that&apos;s after the latest available date shown above</li>
-                    <li>• Select &quot;Transacted folios and folios with balance&quot; option</li>
-                  </ul>
+          <div className="bg-white rounded-lg shadow-md p-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">What happens after upload?</h2>
+            <div className="space-y-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
+                  <span className="text-blue-600 text-xs font-bold">1</span>
                 </div>
-
-                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <h3 className="font-semibold text-green-900 mb-2">Step 2: Convert to CSV</h3>
-                  <p className="text-sm text-green-800 mb-3">
-                    Use the{' '}
-                    <a 
-                      href="https://github.com/SudheerNotes/cams2csv" 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="text-green-600 hover:text-green-800 underline font-medium"
-                    >
-                      CAMS2CSV tool
-                    </a>
-                    {' '}to convert the CAS statement to CSV format
-                  </p>
-                  <ul className="text-sm text-green-800 space-y-1 ml-4">
-                    <li>• Download and install the CAMS2CSV tool</li>
-                    <li>• Open your CAS PDF statement in the tool</li>
-                    <li>• Export as CSV file</li>
-                  </ul>
-                </div>
-
-                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <h3 className="font-semibold text-purple-900 mb-2">Step 3: Upload CSV</h3>
-                  <p className="text-sm text-purple-800">
-                    Upload the generated CSV file using the form on the left
-                  </p>
-                </div>
-
-                <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-                  <h3 className="font-semibold text-amber-900 mb-2">First Time Users</h3>
-                  <p className="text-sm text-amber-800">
-                    For first time users, get the CAS statement from as far back as your first investment to capture your complete transaction history.
-                  </p>
+                <div>
+                  <h3 className="font-semibold text-gray-900">File Upload</h3>
+                  <p className="text-sm text-gray-600">Your CSV file is securely uploaded and stored</p>
                 </div>
               </div>
-
-              <div className="mt-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="font-semibold text-gray-900 mb-2">Important Notes</h3>
-                <ul className="text-sm text-gray-700 space-y-1">
-                  <li>• Always choose a date range after your latest transaction to avoid duplicates</li>
-                  <li>• The CAMS2CSV tool is open source and safe to use</li>
-                  <li>• Make sure to select &quot;Transacted folios and folios with balance&quot; for complete data</li>
-                  <li>• CSV files should be under 10MB in size</li>
-                </ul>
+              
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
+                  <span className="text-yellow-600 text-xs font-bold">2</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Transaction Parsing</h3>
+                  <p className="text-sm text-gray-600">System extracts and validates your mutual fund transactions</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-xs font-bold">3</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Portfolio Update</h3>
+                  <p className="text-sm text-gray-600">Latest NAV data is applied to calculate current portfolio values</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span className="text-purple-600 text-xs font-bold">4</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Ready to View</h3>
+                  <p className="text-sm text-gray-600">Your updated portfolio is ready to view in the dashboard</p>
+                </div>
               </div>
             </div>
           </div>
