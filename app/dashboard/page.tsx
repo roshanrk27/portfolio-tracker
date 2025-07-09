@@ -213,29 +213,29 @@ export default function Dashboard() {
     data: portfolioSummary,
     isLoading: portfolioLoadingRQ
   } = useQuery({
-    queryKey: ['portfolioSummary', userId, latestNavDate],
+    queryKey: ['portfolioSummary', userId],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
       return await getPortfolioSummaryOptimized(userId);
     },
-    enabled: !!userId && !!latestNavDate,
+    enabled: !!userId,
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
   // Use React Query loading/error states for MF value
-  const portfolioLoading = portfolioLoadingRQ || !latestNavDate;
+  const portfolioLoading = portfolioLoadingRQ;
 
   // React Query for NPS Value
   const {
     data: npsValue,
     isLoading: npsLoading
   } = useQuery<number, Error>({
-    queryKey: ['npsValue', userId, latestNavDate],
+    queryKey: ['npsValue', userId],
     queryFn: async () => {
-      if (!userId || !latestNavDate) throw new Error('No user ID or NAV date');
+      if (!userId) throw new Error('No user ID');
       return await getNpsValue(userId);
     },
-    enabled: !!userId && !!latestNavDate,
+    enabled: !!userId,
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
