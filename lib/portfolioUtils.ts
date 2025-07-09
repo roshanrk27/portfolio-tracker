@@ -91,6 +91,46 @@ export async function getPortfolioSummary(userId: string) {
   }
 }
 
+// Optimized portfolio summary - fetches only essential aggregated data
+export async function getPortfolioSummaryOptimized(userId: string) {
+  try {
+    const { data, error } = await supabaseServer
+      .from('current_portfolio')
+      .select('current_value, total_invested')
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Error fetching optimized portfolio summary:', error)
+      return null
+    }
+
+    if (!data || data.length === 0) {
+      return {
+        totalHoldings: 0,
+        totalInvested: 0,
+        totalCurrentValue: 0
+      }
+    }
+
+    // Client-side aggregation (much faster than fetching all fields)
+    const summary = data.reduce((acc, holding) => {
+      acc.totalHoldings += 1
+      acc.totalInvested += parseFloat(holding.total_invested || '0')
+      acc.totalCurrentValue += parseFloat(holding.current_value || '0')
+      return acc
+    }, {
+      totalHoldings: 0,
+      totalInvested: 0,
+      totalCurrentValue: 0
+    })
+
+    return summary
+  } catch (error) {
+    console.error('Error in getPortfolioSummaryOptimized:', error)
+    return null
+  }
+}
+
 // Get portfolio by folio
 export async function getPortfolioByFolio(userId: string, folio: string) {
   try {

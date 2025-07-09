@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getPortfolioSummary, getGoals, getGoalMappings, getLatestNavDate, fetchGoalsWithDetails, batchCalculateXIRR } from '@/lib/portfolioUtils'
+import { getPortfolioSummaryOptimized, getGoals, getGoalMappings, getLatestNavDate, fetchGoalsWithDetails, batchCalculateXIRR } from '@/lib/portfolioUtils'
 import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
@@ -216,7 +216,7 @@ export default function Dashboard() {
     queryKey: ['portfolioSummary', userId, latestNavDate],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
-      return await getPortfolioSummary(userId);
+      return await getPortfolioSummaryOptimized(userId);
     },
     enabled: !!userId && !!latestNavDate,
     staleTime: 1000 * 60 * 60 * 12, // 12 hours

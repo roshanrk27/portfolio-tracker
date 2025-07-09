@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getCurrentPortfolio, getPortfolioSummary, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
+import { getCurrentPortfolio, getPortfolioSummaryOptimized, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
 import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 
 interface PortfolioHolding {
@@ -24,10 +24,10 @@ interface PortfolioSummary {
   totalHoldings: number
   totalInvested: number
   totalCurrentValue: number
-  totalReturn: number
-  totalReturnPercentage: number
-  totalNavValue: number
-  entriesWithNav: number
+  totalReturn?: number
+  totalReturnPercentage?: number
+  totalNavValue?: number
+  entriesWithNav?: number
 }
 
 export default function PortfolioDashboard() {
@@ -53,13 +53,20 @@ export default function PortfolioDashboard() {
         try {
           const [portfolioData, summaryData, latestNavDateData, schemeXirrArr, mfXirrData] = await Promise.all([
             getCurrentPortfolio(session.user.id),
-            getPortfolioSummary(session.user.id),
+            getPortfolioSummaryOptimized(session.user.id),
             getLatestNavDate(),
             getSchemeXIRRs(session.user.id),
             getPortfolioXIRR(session.user.id)
           ])
           setPortfolio(portfolioData)
-          setSummary(summaryData)
+          // Add default values for missing properties from optimized function
+          setSummary(summaryData ? {
+            ...summaryData,
+            totalReturn: 0,
+            totalReturnPercentage: 0,
+            totalNavValue: 0,
+            entriesWithNav: 0
+          } : null)
           setLatestNavDate(latestNavDateData)
           // Map XIRR results for quick lookup
           const xirrMap: Record<string, string> = {}
