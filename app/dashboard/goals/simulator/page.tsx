@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import GoalSimulatorForm, { SimulationFormData } from '@/components/GoalSimulatorForm'
+import RequiredSIPCalculator from '@/components/RequiredSIPCalculator'
 import GoalProjectionChart from '@/components/GoalProjectionChart'
 import StepUpEffectChart from '@/components/StepUpEffectChart'
 import SimulationSummaryTable from '@/components/SimulationSummaryTable'
@@ -44,7 +45,12 @@ interface SimulationResult {
   }
 }
 
+
+
+type SimulatorMode = 'future-value' | 'required-sip'
+
 export default function GoalSimulatorPage() {
+  const [activeTab, setActiveTab] = useState<SimulatorMode>('future-value')
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -394,42 +400,88 @@ export default function GoalSimulatorPage() {
         </div>
       </div>
 
+      {/* Tab Navigation */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Simulation Parameters</h2>
-        <GoalSimulatorForm
-          goalId={selectedGoalId}
-          initialData={formInitialData}
-          onSubmit={handleSimulationSubmit}
-          onChange={handleFormChange}
-        />
-        
-        {/* Inflation Adjustment Toggle */}
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <label htmlFor="inflationToggle" className="text-sm font-medium text-gray-700">
-                Show Inflation-Adjusted Values
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="inflationToggle"
-                  checked={inflationAdjusted}
-                  onChange={(e) => setInflationAdjusted(e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="text-xs text-gray-500">(6% annual inflation)</span>
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+            <button
+              onClick={() => setActiveTab('future-value')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'future-value'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Future Value Calculator
+            </button>
+            <button
+              onClick={() => setActiveTab('required-sip')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'required-sip'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Required SIP Calculator
+            </button>
+          </nav>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'future-value' && (
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Simulation Parameters</h2>
+            <GoalSimulatorForm
+              goalId={selectedGoalId}
+              initialData={formInitialData}
+              onSubmit={handleSimulationSubmit}
+              onChange={handleFormChange}
+            />
+            
+            {/* Inflation Adjustment Toggle */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <label htmlFor="inflationToggle" className="text-sm font-medium text-gray-700">
+                    Show Inflation-Adjusted Values
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="inflationToggle"
+                      checked={inflationAdjusted}
+                      onChange={(e) => setInflationAdjusted(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="text-xs text-gray-500">(6% annual inflation)</span>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Adjusts values for purchasing power over time
+                </div>
               </div>
             </div>
-            <div className="text-xs text-gray-500">
-              Adjusts values for purchasing power over time
-            </div>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'required-sip' && (
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Required SIP Calculator</h2>
+            <p className="text-gray-600 mb-4">
+              Calculate the monthly SIP amount required to reach your target goal with different step-up scenarios.
+            </p>
+            <RequiredSIPCalculator
+              goalId={selectedGoalId}
+              initialData={formInitialData}
+              onSubmit={() => {}} // No API call needed for this calculator
+              onChange={() => {}} // No change handler needed
+            />
+          </div>
+        )}
       </div>
 
-      {/* Loading State */}
-      {isLoading && (
+      {/* Loading State - Only show for Future Value tab */}
+      {activeTab === 'future-value' && isLoading && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -438,8 +490,8 @@ export default function GoalSimulatorPage() {
         </div>
       )}
 
-      {/* Error State */}
-      {error && (
+      {/* Error State - Only show for Future Value tab */}
+      {activeTab === 'future-value' && error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
           <div className="flex">
             <div className="flex-shrink-0">
@@ -457,8 +509,8 @@ export default function GoalSimulatorPage() {
         </div>
       )}
 
-      {/* Results */}
-      {simulationResult && (
+      {/* Results - Only show for Future Value tab */}
+      {activeTab === 'future-value' && simulationResult && (
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Simulation Results</h2>
           {/* Summary */}

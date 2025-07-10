@@ -320,3 +320,221 @@ export function formatDuration(months: number): string {
     return `${years}yr ${remainingMonths}m`
   }
 } 
+
+/**
+ * Calculate required monthly SIP to reach target amount
+ * Uses iterative approach to find the exact monthly investment needed
+ * Formula: P = FV / [((1 + r)^n - 1) / r * (1 + r)]
+ * Where:
+ * - FV = Target amount (adjusted for existing corpus growth)
+ * - r = Monthly interest rate (annual rate / 12)
+ * - n = Number of months
+ * - P = Required monthly SIP
+ * Supports existing corpus that grows alongside new investments
+ */
+export function calculateRequiredMonthlySIP(
+  targetAmount: number,
+  months: number,
+  xirrPercent: number,
+  existingCorpus: number = 0,
+  stepUpPercent: number = 0
+): { monthlySIP: number; totalInvested: number; finalCorpus: number } {
+  try {
+    // Validate inputs
+    if (targetAmount <= 0 || months <= 0 || xirrPercent < 0) {
+      return { monthlySIP: 0, totalInvested: 0, finalCorpus: 0 }
+    }
+
+    // Convert annual XIRR percentage to monthly rate
+    const monthlyRate = xirrPercent / 100 / 12
+    const stepUpRate = stepUpPercent / 100
+
+    // Handle edge case where rate is 0
+    if (monthlyRate === 0) {
+      const futureValueOfExisting = existingCorpus
+      const remainingTarget = targetAmount - futureValueOfExisting
+      const requiredMonthlySIP = Math.ceil(remainingTarget / months)
+      return {
+        monthlySIP: requiredMonthlySIP,
+        totalInvested: requiredMonthlySIP * months,
+        finalCorpus: targetAmount
+      }
+    }
+
+    // Calculate future value of existing corpus
+    const futureValueOfExisting = existingCorpus * Math.pow(1 + monthlyRate, months)
+    const remainingTarget = targetAmount - futureValueOfExisting
+
+    // If existing corpus is sufficient, no additional SIP needed
+    if (remainingTarget <= 0) {
+      return {
+        monthlySIP: 0,
+        totalInvested: 0,
+        finalCorpus: futureValueOfExisting
+      }
+    }
+
+    // For step-up calculations, we need to use iterative approach
+    if (stepUpPercent > 0) {
+      return calculateRequiredSIPWithStepUp(
+        remainingTarget,
+        months,
+        monthlyRate,
+        stepUpRate
+      )
+    }
+
+    // For no step-up, use direct formula
+    // Formula: P = FV / [((1 + r)^n - 1) / r * (1 + r)]
+    const ratePlusOne = 1 + monthlyRate
+    const rateToPowerN = Math.pow(ratePlusOne, months)
+    const numerator = rateToPowerN - 1
+    const denominator = monthlyRate
+    const sipFactor = numerator / denominator
+    const totalFactor = sipFactor * ratePlusOne
+
+    const requiredMonthlySIP = Math.ceil(remainingTarget / totalFactor)
+    const totalInvested = requiredMonthlySIP * months
+
+    // Verify the calculation
+    const verification = calculateCorpus(requiredMonthlySIP, xirrPercent, months)
+    const finalCorpus = futureValueOfExisting + verification
+
+    return {
+      monthlySIP: requiredMonthlySIP,
+      totalInvested,
+      finalCorpus
+    }
+  } catch (error) {
+    console.error('Error in calculateRequiredMonthlySIP:', error)
+    return { monthlySIP: 0, totalInvested: 0, finalCorpus: 0 }
+  }
+}
+
+/**
+ * Calculate required monthly SIP with step-up using iterative approach
+ * This is more complex because step-up affects the calculation
+ */
+function calculateRequiredSIPWithStepUp(
+  targetAmount: number,
+  months: number,
+  monthlyRate: number,
+  stepUpRate: number
+): { monthlySIP: number; totalInvested: number; finalCorpus: number } {
+  // Use binary search to find the required monthly SIP
+  let low = 0
+  let high = targetAmount // Upper bound
+  let bestSIP = 0
+  let bestCorpus = 0
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    
+    // Calculate corpus with this monthly SIP
+    const result = calculateCorpusWithStepUp(
+      mid,
+      monthlyRate * 12 * 100, // Convert back to percentage
+      stepUpRate * 100, // Convert back to percentage
+      undefined,
+      months,
+      0 // No existing corpus for this calculation
+    )
+
+    if (result.corpus >= targetAmount) {
+      // This SIP is sufficient, try a lower value
+      bestSIP = mid
+      bestCorpus = result.corpus
+      high = mid - 1
+    } else {
+      // This SIP is insufficient, try a higher value
+      low = mid + 1
+    }
+  }
+
+  // Calculate total invested with step-up
+  let totalInvested = 0
+  let currentSIP = bestSIP
+  
+  for (let m = 0; m < months; m++) {
+    if (m > 0 && m % 12 === 0) {
+      currentSIP *= (1 + stepUpRate)
+    }
+    totalInvested += currentSIP
+  }
+
+  return {
+    monthlySIP: bestSIP,
+    totalInvested: Math.round(totalInvested),
+    finalCorpus: bestCorpus
+  }
+} 
+
+/**
+ * Generate multiple step-up scenarios for comparison
+ * Shows required monthly SIP for different step-up rates
+ * Creates dynamic columns based on duration
+ */
+export function generateStepUpScenarios(
+  targetAmount: number,
+  months: number,
+  xirrPercent: number,
+  existingCorpus: number = 0,
+  stepUpRates: number[] = [0, 5, 10, 15, 20]
+): Array<{
+  stepUpPercent: number
+  monthlySIP: number
+  totalInvested: number
+  finalCorpus: number
+  yearColumns: Array<{ year: number; sip: number }>
+}> {
+  const scenarios = []
+  const years = Math.ceil(months / 12)
+
+  // Determine which years to show based on duration
+  const getYearColumns = (durationYears: number): number[] => {
+    if (durationYears <= 3) {
+      // Short goals: show each year
+      return Array.from({ length: durationYears }, (_, i) => i + 1)
+    } else if (durationYears <= 7) {
+      // Medium goals: show key milestones
+      return [1, 2, 3, Math.ceil(durationYears / 2), durationYears]
+    } else if (durationYears <= 15) {
+      // Long goals: show strategic points
+      return [1, 3, 5, 7, 10, durationYears]
+    } else {
+      // Very long goals: show extended milestones
+      return [1, 3, 5, 7, 10, 15, durationYears]
+    }
+  }
+
+  const yearColumns = getYearColumns(years)
+
+  for (const stepUpRate of stepUpRates) {
+    const result = calculateRequiredMonthlySIP(
+      targetAmount,
+      months,
+      xirrPercent,
+      existingCorpus,
+      stepUpRate
+    )
+
+    // Calculate SIP amounts for each relevant year
+    const yearSIPs = yearColumns.map(year => {
+      let sip = result.monthlySIP
+      if (stepUpRate > 0 && year > 1) {
+        sip = Math.round(result.monthlySIP * Math.pow(1 + stepUpRate / 100, year - 1))
+      }
+      return { year, sip }
+    })
+
+    scenarios.push({
+      stepUpPercent: stepUpRate,
+      monthlySIP: result.monthlySIP,
+      totalInvested: result.totalInvested,
+      finalCorpus: result.finalCorpus,
+      yearColumns: yearSIPs
+    })
+  }
+
+  return scenarios
+} 
