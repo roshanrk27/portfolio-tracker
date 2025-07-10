@@ -82,6 +82,7 @@ export default function GoalSimulatorForm({
       newErrors.stepUp = 'Step-up must be between 0 and 100%'
     }
 
+    // Only validate targetAmount if it's provided (not undefined)
     if (formData.targetAmount !== undefined && formData.targetAmount <= 0) {
       newErrors.targetAmount = 'Target amount must be greater than 0'
     }
@@ -91,7 +92,7 @@ export default function GoalSimulatorForm({
     }
 
     // Duration validation: only required if no target amount is provided
-    if (!formData.targetAmount && (!formData.months || formData.months < 1 || formData.months > 600)) {
+    if (formData.targetAmount === undefined && (!formData.months || formData.months < 1 || formData.months > 600)) {
       newErrors.months = 'Duration must be between 1 and 600 months when no target amount is specified'
     }
 
@@ -102,22 +103,53 @@ export default function GoalSimulatorForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (validateForm() && onSubmit) {
-      onSubmit(formData)
+    if (!validateForm()) {
+      return
+    }
+
+    // Ensure we have either targetAmount or months for simulation
+    if (formData.targetAmount === undefined && (!formData.months || formData.months < 1)) {
+      setErrors(prev => ({
+        ...prev,
+        months: 'Please specify either a target amount or duration for simulation'
+      }))
+      return
+    }
+
+    const simulationData = {
+      ...formData,
+      targetAmount: formData.targetAmount || 0, // Use 0 as default for simulation
+      months: formData.months || 0
+    }
+
+    if (onSubmit) {
+      onSubmit(simulationData)
     }
   }
 
   const handleInputChange = (field: keyof SimulationFormData, value: string | number) => {
-    const numValue = typeof value === 'string' ? parseFloat(value) || 0 : value
+    let processedValue: number | undefined
+    
+    if (typeof value === 'string') {
+      // Handle empty string - set to undefined for optional fields
+      if (value === '') {
+        processedValue = undefined
+      } else {
+        const numValue = parseFloat(value)
+        processedValue = isNaN(numValue) ? 0 : numValue
+      }
+    } else {
+      processedValue = value
+    }
     
     // Round to whole numbers for monthlySIP, existingCorpus, months
-    const roundedValue = (field === 'monthlySIP' || field === 'existingCorpus' || field === 'months') 
-      ? Math.round(numValue) 
-      : numValue
+    const finalValue = (field === 'monthlySIP' || field === 'existingCorpus' || field === 'months') 
+      ? Math.round(processedValue || 0) 
+      : processedValue
     
     setFormData(prev => ({
       ...prev,
-      [field]: roundedValue
+      [field]: finalValue
     }))
   }
 

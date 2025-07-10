@@ -1,6 +1,6 @@
 'use client'
 
-import { calculateCorpusWithStepUp, calculateNominalValue } from '@/lib/goalSimulator'
+import { calculateCorpusWithStepUp, calculateNominalValue, formatDuration } from '@/lib/goalSimulator'
 
 interface StepUpEffectChartProps {
   stepUpPercents: number[]
@@ -79,8 +79,8 @@ export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPerc
             </text>
           ))}
           {/* Y-axis labels (min/max) */}
-          <text x={padding - 32} y={getY(minMonths)} fontSize={11} textAnchor="end" fill="#6b7280">{minMonths} mo</text>
-          <text x={padding - 32} y={getY(maxMonths)} fontSize={11} textAnchor="end" fill="#6b7280">{maxMonths} mo</text>
+          <text x={padding - 32} y={getY(minMonths)} fontSize={11} textAnchor="end" fill="#6b7280">{formatDuration(minMonths)}</text>
+          <text x={padding - 32} y={getY(maxMonths)} fontSize={11} textAnchor="end" fill="#6b7280">{formatDuration(maxMonths)}</text>
         </svg>
       </div>
       {/* Data table for detailed view */}
@@ -91,14 +91,14 @@ export default function StepUpEffectChart({ stepUpPercents, monthlySIP, xirrPerc
             <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
                 <th className="text-left p-3 font-semibold text-gray-700">Step-up %</th>
-                <th className="text-right p-3 font-semibold text-gray-700">Months to Goal</th>
+                <th className="text-right p-3 font-semibold text-gray-700">Time to Goal</th>
               </tr>
             </thead>
             <tbody>
               {data.map((point, index) => (
                 <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="p-3 text-gray-900">{point.stepUp}%</td>
-                  <td className="p-3 text-right font-medium text-blue-900">{point.months}</td>
+                  <td className="p-3 text-right font-medium text-blue-900">{formatDuration(point.months)}</td>
                 </tr>
               ))}
             </tbody>
