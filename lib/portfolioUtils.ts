@@ -1283,7 +1283,7 @@ export async function fetchGoalsWithDetails(userId: string) {
     }
 
     // 5. Batch calculate XIRR for all goals (much faster than individual calls)
-    const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings)
+    const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings, portfolios)
     
     // 6. Combine goals with XIRR results and other data
     const goalsWithDetails = goalsData.map((goal, i) => {
@@ -1348,7 +1348,12 @@ export async function fetchGoalsWithDetails(userId: string) {
  * Batch calculate XIRR for all goals using pre-fetched data
  * This significantly improves performance by avoiding sequential database calls
  */
-export async function batchCalculateXIRR(userId: string, goals: GoalData[], allMappings: GoalMapping[][]) {
+export async function batchCalculateXIRR(
+  userId: string, 
+  goals: GoalData[], 
+  allMappings: GoalMapping[][], 
+  portfolioData?: PortfolioData[]
+) {
   try {
     // 1. Collect all unique scheme-folio pairs and goal IDs
     const allSchemeFolioPairs: { scheme_name: string; folio: string; goalId: string }[] = []
@@ -1402,12 +1407,13 @@ export async function batchCalculateXIRR(userId: string, goals: GoalData[], allM
       })) || []
     }
 
-    // 3. Batch fetch all current portfolio values
+    // 3. Use passed portfolio data or fetch if not provided
     const allPortfolioValues: Record<string, number> = {}
-    const { data: portfolioEntries } = await supabaseServer
+    const portfolioEntries = portfolioData || await supabaseServer
       .from('current_portfolio')
       .select('scheme_name, folio, current_value')
       .eq('user_id', userId)
+      .then(result => result.data || [])
     
     if (portfolioEntries) {
       for (const entry of portfolioEntries) {

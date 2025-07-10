@@ -253,6 +253,24 @@ export default function Dashboard() {
     refetchOnWindowFocus: false,
   });
 
+  // React Query for Portfolio Data (shared between goals and XIRR)
+  const {
+    data: portfolioData = []
+  } = useQuery({
+    queryKey: ['portfolioData', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      const { data } = await supabase
+        .from('current_portfolio')
+        .select('scheme_name, folio, current_value')
+        .eq('user_id', userId);
+      return data || [];
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false,
+  });
+
   // React Query for XIRR calculations (load after goals, progressive loading)
   const {
     data: xirrData = {},
@@ -267,7 +285,7 @@ export default function Dashboard() {
       if (!goalsData || goalsData.length === 0) return {};
       
       const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)));
-      const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings);
+      const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings, portfolioData);
       
       // Create a map of goal ID to XIRR data
       const xirrMap: Record<string, GoalXirrResult> = {};
@@ -277,7 +295,7 @@ export default function Dashboard() {
       
       return xirrMap;
     },
-    enabled: !!userId && !goalsLoading, // Only load after goals are loaded
+    enabled: !!userId && !goalsLoading && portfolioData.length > 0, // Only load after goals and portfolio data are loaded
     staleTime: 1000 * 60 * 10, // 10 minutes for XIRR (less frequent updates)
     refetchOnWindowFocus: false,
   });
