@@ -8,7 +8,6 @@ import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
 import { useQuery } from '@tanstack/react-query'
-import { useCallback } from 'react';
 import Link from 'next/link'
 
 interface StockSummary {
@@ -257,7 +256,6 @@ export default function Dashboard() {
   // React Query for XIRR calculations (load after goals, progressive loading)
   const {
     data: xirrData = {},
-    isLoading: xirrLoading,
     refetch: refetchXIRR
   } = useQuery<Record<string, GoalXirrResult>>({
     queryKey: ['xirr', userId],
