@@ -139,6 +139,31 @@ export default function StocksPage() {
     refetchOnWindowFocus: false,
   })
 
+  // React Query for latest stock price cache timestamp
+  const {
+    data: latestCacheTimestamp
+  } = useQuery({
+    queryKey: ['latestStockCacheTimestamp'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('stock_prices_cache')
+        .select('updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single()
+      
+      if (error) {
+        console.error('Error fetching latest cache timestamp:', error)
+        return null
+      }
+      
+      return data?.updated_at || null
+    },
+    enabled: stocks.length > 0,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: false,
+  })
+
   // Extract prices from response
   const stockPrices: Record<string, { price: number | null; currency: string; exchangeRate?: number; originalPrice?: number; originalCurrency?: string }> = stockPricesResponse?.prices || {}
 
@@ -393,7 +418,7 @@ export default function StocksPage() {
               <p className="text-gray-600">Track your stock investments</p>
             </div>
             <div className="flex items-center space-x-4">
-              <StaleDataIndicator isStale={isDataStale} timestamp={stockPricesResponse?.timestamp} />
+              <StaleDataIndicator isStale={isDataStale} timestamp={latestCacheTimestamp} />
               <button
                 onClick={() => setShowStockForm(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"

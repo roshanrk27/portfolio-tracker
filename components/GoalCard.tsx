@@ -37,12 +37,14 @@ interface GoalCardProps {
     error?: string
     current_value: number
   }
+  isLoadingXIRR?: boolean
+  isLoadingPortfolio?: boolean
   onEdit?: (goal: Goal) => void
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
 }
 
-export default function GoalCard({ goal, xirrData, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
+export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoadingPortfolio = false, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -238,14 +240,14 @@ export default function GoalCard({ goal, xirrData, onEdit, onDelete, onMappingCh
         <div className="mb-4">
           <div className="flex justify-between items-center mb-2">
             <span className="text-sm font-medium text-gray-700">Progress</span>
-            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
-              <span className="text-sm font-semibold text-gray-500">Fetching...</span>
+            {isLoadingPortfolio ? (
+              <span className="text-sm font-semibold text-gray-500">Loading...</span>
             ) : (
               <span className="text-sm font-semibold text-gray-900">{calculateProgress().toFixed(1)}%</span>
             )}
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
-            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
+            {isLoadingPortfolio ? (
               <div className="h-2 rounded-full bg-blue-200 animate-pulse" style={{ width: '100%' }}></div>
             ) : (
               <div
@@ -260,8 +262,11 @@ export default function GoalCard({ goal, xirrData, onEdit, onDelete, onMappingCh
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <p className="text-sm text-gray-600">Current Amount</p>
-            {goal.current_amount === 0 && goal.mappedStocks && goal.mappedStocks.length > 0 && liveStockValue === null ? (
-              <div className="flex items-center h-7"><span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></span> <span className="text-gray-500 text-sm">Fetching...</span></div>
+            {isLoadingPortfolio ? (
+              <div className="flex items-center h-7">
+                <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></span>
+                <span className="text-gray-500 text-sm">Loading...</span>
+              </div>
             ) : (
               <p className="text-base sm:text-lg font-semibold text-gray-900">{formatCurrency(goal.current_amount + (liveStockValue || 0))}</p>
             )}
@@ -286,9 +291,16 @@ export default function GoalCard({ goal, xirrData, onEdit, onDelete, onMappingCh
                   <div className="flex flex-col items-start sm:items-end">
                     <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.mutual_fund_value)}</span>
                     {/* MF XIRR below current value */}
-                    <span className={`text-xs sm:text-xs mt-1 ${xirrData?.xirrPercentage === undefined ? 'text-gray-400' : xirrData?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {xirrData?.formattedXIRR ? `XIRR: ${xirrData.formattedXIRR}` : 'XIRR: N/A'}
-                    </span>
+                    {isLoadingXIRR ? (
+                      <div className="flex items-center mt-1">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
+                        <span className="text-xs text-gray-500">Calculating XIRR...</span>
+                      </div>
+                    ) : (
+                      <span className={`text-xs sm:text-xs mt-1 ${xirrData?.xirrPercentage === undefined ? 'text-gray-400' : xirrData?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {xirrData?.formattedXIRR ? `XIRR: ${xirrData.formattedXIRR}` : 'XIRR: N/A'}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

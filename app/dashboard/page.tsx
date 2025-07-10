@@ -598,6 +598,8 @@ export default function Dashboard() {
                     key={goal.id}
                     goal={goal}
                     xirrData={xirrData[goal.id]}
+                    isLoadingXIRR={!xirrData[goal.id]}
+                    isLoadingPortfolio={portfolioLoading}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}
