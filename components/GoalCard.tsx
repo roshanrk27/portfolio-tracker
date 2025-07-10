@@ -39,12 +39,13 @@ interface GoalCardProps {
   }
   isLoadingXIRR?: boolean
   isLoadingPortfolio?: boolean
+  isLoadingAssets?: boolean
   onEdit?: (goal: Goal) => void
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
 }
 
-export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoadingPortfolio = false, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
+export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoadingPortfolio = false, isLoadingAssets = false, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -262,7 +263,7 @@ export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoad
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
             <p className="text-sm text-gray-600">Current Amount</p>
-            {isLoadingPortfolio ? (
+            {isLoadingAssets || isLoadingPortfolio ? (
               <div className="flex items-center h-7">
                 <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></span>
                 <span className="text-gray-500 text-sm">Loading...</span>
@@ -278,56 +279,66 @@ export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoad
         </div>
 
         {/* Investment Breakdown */}
-        {(goal.mutual_fund_value || goal.nps_value || (liveStockValue !== null ? formatCurrency(liveStockValue) : '...')) && (
-          <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Investment Breakdown</h4>
-            <div className="space-y-2">
-              {goal.mutual_fund_value && goal.mutual_fund_value >= 0 && (
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
-                    <span className="text-xs sm:text-sm text-gray-600">Mutual Funds</span>
-                  </div>
-                  <div className="flex flex-col items-start sm:items-end">
-                    <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.mutual_fund_value)}</span>
-                    {/* MF XIRR below current value */}
-                    {isLoadingXIRR ? (
-                      <div className="flex items-center mt-1">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
-                        <span className="text-xs text-gray-500">Calculating XIRR...</span>
-                      </div>
-                    ) : (
-                      <span className={`text-xs sm:text-xs mt-1 ${xirrData?.xirrPercentage === undefined ? 'text-gray-400' : xirrData?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {xirrData?.formattedXIRR ? `XIRR: ${xirrData.formattedXIRR}` : 'XIRR: N/A'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {goal.nps_value && goal.nps_value > 0 && (
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-purple-500 rounded-full flex-shrink-0"></div>
-                    <span className="text-xs sm:text-sm text-gray-600">NPS</span>
-                  </div>
-                  <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.nps_value)}</span>
-                </div>
-              )}
-              {/* Stocks breakdown row */}
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
-                  <span className="text-xs sm:text-sm text-gray-600">Stocks</span>
-                </div>
-                {stockPricesLoading ? (
+        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Investment Breakdown</h4>
+          <div className="space-y-2">
+            {/* Mutual Funds */}
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full flex-shrink-0"></div>
+                <span className="text-xs sm:text-sm text-gray-600">Mutual Funds</span>
+              </div>
+              <div className="flex flex-col items-start sm:items-end">
+                {isLoadingAssets ? (
                   <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
                 ) : (
-                  <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(liveStockValue)}</span>
+                  <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">
+                    {goal.mutual_fund_value && goal.mutual_fund_value >= 0 ? formatCurrency(goal.mutual_fund_value) : '₹0'}
+                  </span>
+                )}
+                {/* MF XIRR below current value */}
+                {isLoadingXIRR ? (
+                  <div className="flex items-center mt-1">
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600 mr-1"></div>
+                    <span className="text-xs text-gray-500">Calculating XIRR...</span>
+                  </div>
+                ) : (
+                  <span className={`text-xs sm:text-xs mt-1 ${xirrData?.xirrPercentage === undefined ? 'text-gray-400' : xirrData?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {xirrData?.formattedXIRR ? `XIRR: ${xirrData.formattedXIRR}` : 'XIRR: N/A'}
+                  </span>
                 )}
               </div>
             </div>
+            
+            {/* NPS */}
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-purple-500 rounded-full flex-shrink-0"></div>
+                <span className="text-xs sm:text-sm text-gray-600">NPS</span>
+              </div>
+              {isLoadingAssets ? (
+                <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
+              ) : (
+                <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">
+                  {goal.nps_value && goal.nps_value > 0 ? formatCurrency(goal.nps_value) : '₹0'}
+                </span>
+              )}
+            </div>
+            
+            {/* Stocks breakdown row */}
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0">
+              <div className="flex items-center space-x-2">
+                <div className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
+                <span className="text-xs sm:text-sm text-gray-600">Stocks</span>
+              </div>
+              {isLoadingAssets || stockPricesLoading ? (
+                <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
+              ) : (
+                <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(liveStockValue)}</span>
+              )}
+            </div>
           </div>
-        )}
+        </div>
 
         {/* Target Date and Status */}
         <div className="flex justify-between items-center">
@@ -352,9 +363,13 @@ export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoad
         <div className="mt-4 pt-4 border-t border-gray-200">
           <div className="flex justify-between items-center">
             <span className="text-xs sm:text-sm text-gray-600">Remaining</span>
-            <span className={`text-xs sm:text-sm font-semibold ${goal.target_amount - (goal.current_amount + (liveStockValue || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {formatCurrency(goal.target_amount - (goal.current_amount + (liveStockValue || 0)))}
-            </span>
+            {isLoadingAssets || isLoadingPortfolio ? (
+              <span className="inline-block w-16 h-5 bg-gray-200 rounded animate-pulse" />
+            ) : (
+              <span className={`text-xs sm:text-sm font-semibold ${goal.target_amount - (goal.current_amount + (liveStockValue || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {formatCurrency(goal.target_amount - (goal.current_amount + (liveStockValue || 0)))}
+              </span>
+            )}
           </div>
         </div>
 

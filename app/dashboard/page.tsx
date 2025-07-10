@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
-import { getPortfolioSummaryOptimized, getGoals, getGoalMappings, getLatestNavDate, fetchGoalsWithDetails, batchCalculateXIRR } from '@/lib/portfolioUtils'
+import { getPortfolioSummaryOptimized, getGoals, getGoalMappings, getLatestNavDate, batchCalculateXIRR, getBasicGoals, getGoalAssets } from '@/lib/portfolioUtils'
 import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import GoalForm from '@/components/GoalForm'
 import GoalCard from '@/components/GoalCard'
@@ -18,15 +18,18 @@ interface StockSummary {
   totalReturnPercentage: number
 }
 
-interface Goal {
+interface BasicGoal {
   id: string
   name: string
   description: string | null
   target_amount: number
   target_date: string
-  current_amount: number
   created_at: string
   updated_at: string
+}
+
+interface Goal extends BasicGoal {
+  current_amount: number
   xirr?: number
   xirrPercentage?: number
   formattedXIRR?: string
@@ -237,41 +240,40 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
-  // React Query for Goals with Details (load first)
+  // Phase 1: React Query for Basic Goals (load first - fast)
   const {
-    data: goals = [],
-    isLoading: goalsLoading,
-    refetch: refetchGoals
-  } = useQuery<Goal[]>({
-    queryKey: ['goals', userId],
+    data: basicGoals = [],
+    isLoading: basicGoalsLoading,
+    refetch: refetchBasicGoals
+  } = useQuery<BasicGoal[]>({
+    queryKey: ['basicGoals', userId],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
-      return await fetchGoalsWithDetails(userId);
+      return await getBasicGoals(userId);
     },
     enabled: !!userId,
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchOnWindowFocus: false,
   });
 
-  // React Query for Portfolio Data (shared between goals and XIRR)
+  // Phase 2: React Query for Goal Assets (load after basic goals - medium)
   const {
-    data: portfolioData = []
+    data: goalAssets = {},
+    isLoading: goalAssetsLoading,
+    refetch: refetchGoalAssets
   } = useQuery({
-    queryKey: ['portfolioData', userId],
+    queryKey: ['goalAssets', userId],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
-      const { data } = await supabase
-        .from('current_portfolio')
-        .select('scheme_name, folio, current_value')
-        .eq('user_id', userId);
-      return data || [];
+      const goalIds = basicGoals.map(goal => goal.id);
+      return await getGoalAssets(userId, goalIds);
     },
-    enabled: !!userId,
+    enabled: !!userId && basicGoals.length > 0,
     staleTime: 1000 * 60 * 5, // 5 minutes
     refetchOnWindowFocus: false,
   });
 
-  // React Query for XIRR calculations (load after goals, progressive loading)
+  // Phase 3: React Query for XIRR calculations (load after assets - slow)
   const {
     data: xirrData = {},
     refetch: refetchXIRR
@@ -285,7 +287,7 @@ export default function Dashboard() {
       if (!goalsData || goalsData.length === 0) return {};
       
       const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)));
-      const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings, portfolioData);
+      const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings, []);
       
       // Create a map of goal ID to XIRR data
       const xirrMap: Record<string, GoalXirrResult> = {};
@@ -295,7 +297,7 @@ export default function Dashboard() {
       
       return xirrMap;
     },
-    enabled: !!userId && !goalsLoading && portfolioData.length > 0, // Only load after goals and portfolio data are loaded
+    enabled: !!userId && basicGoals.length > 0 && Object.keys(goalAssets).length > 0,
     staleTime: 1000 * 60 * 10, // 10 minutes for XIRR (less frequent updates)
     refetchOnWindowFocus: false,
   });
@@ -329,7 +331,7 @@ export default function Dashboard() {
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
-    await Promise.all([refetchGoals(), refetchXIRR()])
+    await Promise.all([refetchBasicGoals(), refetchGoalAssets(), refetchXIRR()])
   }
 
   const handleGoalDeleted = async (goalId: string) => {
@@ -345,7 +347,7 @@ export default function Dashboard() {
       }
 
       // Refresh goals and XIRR data using React Query
-      await Promise.all([refetchGoals(), refetchXIRR()])
+      await Promise.all([refetchBasicGoals(), refetchGoalAssets(), refetchXIRR()])
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleGoalDeleted:', errorMessage)
@@ -355,7 +357,7 @@ export default function Dashboard() {
   const handleMappingChanged = async () => {
     try {
       // Refresh goals and XIRR data using React Query
-      await Promise.all([refetchGoals(), refetchXIRR()])
+      await Promise.all([refetchBasicGoals(), refetchGoalAssets(), refetchXIRR()])
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleMappingChanged:', errorMessage)
@@ -380,7 +382,7 @@ export default function Dashboard() {
       }
 
       // Refresh goals list using React Query (XIRR doesn't need refresh for goal edits)
-      await refetchGoals()
+      await refetchBasicGoals()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
       console.error('Error in handleGoalEdit:', errorMessage)
@@ -539,7 +541,7 @@ export default function Dashboard() {
         <div className="mb-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-2 sm:mb-0">Financial Goals</h2>
-            {goals.length === 0 ? (
+            {basicGoals.length === 0 ? (
               <button
                 onClick={() => setShowGoalForm(true)}
                 className="bg-blue-600 text-white w-full sm:w-auto px-4 py-2 text-base rounded-lg hover:bg-blue-700 flex items-center justify-center"
@@ -562,7 +564,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {goalsLoading ? (
+          {basicGoalsLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
@@ -574,7 +576,7 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-          ) : goals.length === 0 ? (
+          ) : basicGoals.length === 0 ? (
             <div className="bg-white rounded-lg shadow p-8 text-center">
               <div className="text-gray-400 mb-4">
                 <svg className="mx-auto h-16 w-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -592,7 +594,23 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {goals.map((goal) => {
+              {basicGoals.map((basicGoal) => {
+                // Combine basic goal with asset data and XIRR data
+                const assetData = goalAssets[basicGoal.id] || {
+                  mutual_fund_value: 0,
+                  mappedStocks: [],
+                  nps_value: 0,
+                  current_amount: 0
+                }
+                
+                const goal: Goal = {
+                  ...basicGoal,
+                  current_amount: assetData.current_amount,
+                  mutual_fund_value: assetData.mutual_fund_value,
+                  mappedStocks: assetData.mappedStocks,
+                  nps_value: assetData.nps_value
+                }
+
                 return (
                   <GoalCard
                     key={goal.id}
@@ -600,6 +618,7 @@ export default function Dashboard() {
                     xirrData={xirrData[goal.id]}
                     isLoadingXIRR={!xirrData[goal.id]}
                     isLoadingPortfolio={portfolioLoading}
+                    isLoadingAssets={goalAssetsLoading}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}

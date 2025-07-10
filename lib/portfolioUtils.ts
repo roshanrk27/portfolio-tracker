@@ -1088,6 +1088,27 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
   }
 }
 
+// Get basic goals without asset calculations (for progressive loading)
+export async function getBasicGoals(userId: string) {
+  try {
+    const { data, error } = await supabaseServer
+      .from('goals')
+      .select('id, name, description, target_amount, target_date, created_at, updated_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching basic goals:', error)
+      return []
+    }
+
+    return data || []
+  } catch (error) {
+    console.error('Error in getBasicGoals:', error)
+    return []
+  }
+}
+
 // Get the latest NAV update date
 export async function getLatestNavDate() {
   try {
@@ -1696,5 +1717,149 @@ export async function getAverageMonthlyInvestmentByGoal(goalId: string): Promise
   } catch (error) {
     console.error('Error in getAverageMonthlyInvestmentByGoal:', error)
     return 0
+  }
+} 
+
+// Get goal assets (mutual funds, stocks, NPS) without XIRR calculations
+export async function getGoalAssets(userId: string, goalIds: string[]) {
+  try {
+    if (!goalIds || goalIds.length === 0) {
+      return {}
+    }
+
+    // Get all mappings for the goals
+    const allMappings = await Promise.all(goalIds.map(goalId => getGoalMappings(goalId)))
+    
+    // Collect all unique stock IDs, (scheme_name, folio) pairs, and NPS holding IDs
+    const allStockIds: string[] = []
+    const allPortfolioPairs: { scheme_name: string; folio: string }[] = []
+    const allNpsIds: string[] = []
+    
+    goalIds.forEach((goalId, i) => {
+      for (const mapping of allMappings[i]) {
+        if (mapping.source_type === 'stock' && mapping.source_id) {
+          allStockIds.push(mapping.source_id)
+        } else if (mapping.source_type === 'mutual_fund') {
+          allPortfolioPairs.push({ scheme_name: mapping.scheme_name, folio: mapping.folio || '' })
+        } else if (mapping.source_type === 'nps' && mapping.source_id) {
+          allNpsIds.push(mapping.source_id)
+        }
+      }
+    })
+
+    // Remove duplicates
+    const uniqueStockIds = Array.from(new Set(allStockIds))
+    const uniquePortfolioPairs = Array.from(new Set(allPortfolioPairs.map((p: { scheme_name: string; folio: string }) => `${p.scheme_name}|${p.folio}`)))
+      .map((key: string) => {
+        const [scheme_name, folio] = key.split('|')
+        return { scheme_name, folio }
+      })
+    const uniqueNpsIds = Array.from(new Set(allNpsIds))
+
+    // Batch fetch all stocks, portfolios, and NPS holdings
+    let stocks: StockData[] = []
+    if (uniqueStockIds.length > 0) {
+      const { data } = await supabaseServer
+        .from('stocks')
+        .select('*')
+        .eq('user_id', userId)
+        .in('id', uniqueStockIds)
+      stocks = data || []
+    }
+
+    let portfolios: PortfolioData[] = []
+    if (uniquePortfolioPairs.length > 0) {
+      const { data } = await supabaseServer
+        .from('current_portfolio')
+        .select('scheme_name, folio, current_value')
+        .eq('user_id', userId)
+      portfolios = data || []
+    }
+
+    let npsHoldings: NpsHoldingData[] = []
+    if (uniqueNpsIds.length > 0) {
+      const { data } = await supabaseServer
+        .from('nps_holdings')
+        .select('id, fund_code, units')
+        .eq('user_id', userId)
+        .in('id', uniqueNpsIds)
+      npsHoldings = data || []
+    }
+
+    // Fetch all needed NAVs for NPS holdings
+    let npsNavs: NpsNavData[] = []
+    if (npsHoldings.length > 0) {
+      const fundCodes = Array.from(new Set(npsHoldings.map((h: NpsHoldingData) => h.fund_code)))
+      if (fundCodes.length > 0) {
+        const { data } = await supabaseServer
+          .from('nps_nav')
+          .select('fund_code, nav')
+          .in('fund_code', fundCodes)
+        npsNavs = data || []
+      }
+    }
+
+    const npsNavMap: Record<string, number> = {}
+    for (const nav of npsNavs) {
+      npsNavMap[nav.fund_code] = parseFloat(nav.nav)
+    }
+
+    // Create asset data for each goal
+    const goalAssets: Record<string, {
+      mutual_fund_value: number
+      mappedStocks: { stock_code: string; quantity: number; exchange: string; source_id: string }[]
+      nps_value: number
+      current_amount: number
+    }> = {}
+
+    goalIds.forEach((goalId, i) => {
+      const mappings = allMappings[i] as GoalMapping[]
+      
+      let mutualFundValue = 0
+      const mappedStocks: { stock_code: string; quantity: number; exchange: string; source_id: string }[] = []
+      let npsValue = 0
+      
+      for (const mapping of mappings) {
+        if (mapping.source_type === 'mutual_fund') {
+          const mappingScheme = (mapping.scheme_name || '').trim().toLowerCase()
+          const mappingFolio = (mapping.folio || '').trim().toLowerCase()
+          const portfolioData = portfolios.filter(
+            (p: PortfolioData) =>
+              (p.scheme_name || '').trim().toLowerCase() === mappingScheme &&
+              ((p.folio || '').trim().toLowerCase() === mappingFolio)
+          )
+          const mfValue = (portfolioData || []).reduce((sum: number, item: PortfolioData) => sum + (parseFloat(item.current_value || '0') || 0), 0)
+          mutualFundValue += mfValue
+        } else if (mapping.source_type === 'stock' && mapping.source_id) {
+          const stockData = stocks.find((s: StockData) => s.id === mapping.source_id)
+          if (stockData) {
+            mappedStocks.push({
+              stock_code: stockData.stock_code,
+              quantity: stockData.quantity,
+              exchange: stockData.exchange,
+              source_id: stockData.id
+            })
+          }
+        } else if (mapping.source_type === 'nps' && mapping.source_id) {
+          const nps = npsHoldings.find((h: NpsHoldingData) => h.id === mapping.source_id)
+          if (nps) {
+            const nav = npsNavMap[nps.fund_code] || 0
+            npsValue += nav * (parseFloat(nps.units) || 0)
+          }
+        }
+      }
+
+      goalAssets[goalId] = {
+        mutual_fund_value: mutualFundValue,
+        mappedStocks,
+        nps_value: npsValue,
+        current_amount: mutualFundValue + npsValue // stock value will be added client-side
+      }
+    })
+
+    return goalAssets
+  } catch (error) {
+    console.error('Error in getGoalAssets:', error)
+    return {}
   }
 } 
