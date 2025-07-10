@@ -20,6 +20,14 @@ interface GoalDetailsModalProps {
     current_amount: number
     mappedStocks?: { stock_code: string; quantity: number; exchange: string; source_id: string }[]
   }
+  xirrData?: {
+    xirr: number
+    xirrPercentage: number
+    formattedXIRR: string
+    converged: boolean
+    error?: string
+    current_value: number
+  }
   onClose: () => void
 }
 
@@ -44,7 +52,7 @@ interface NpsHoldingDetail {
   current_value: number
 }
 
-export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProps) {
+export default function GoalDetailsModal({ goal, xirrData, onClose }: GoalDetailsModalProps) {
   const [schemeDetails, setSchemeDetails] = useState<SchemeDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -147,9 +155,13 @@ export default function GoalDetailsModal({ goal, onClose }: GoalDetailsModalProp
         return
       }
 
-      // Get goal XIRR
-      const xirrData = await getGoalXIRR(goal.id)
-      setGoalXIRR(xirrData)
+      // Use pre-calculated XIRR data if available, otherwise calculate
+      if (xirrData) {
+        setGoalXIRR(xirrData)
+      } else {
+        const calculatedXirrData = await getGoalXIRR(goal.id)
+        setGoalXIRR(calculatedXirrData)
+      }
 
       // Get goal mappings
       const mappings = await getGoalMappings(goal.id)

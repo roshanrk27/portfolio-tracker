@@ -29,12 +29,20 @@ interface Goal {
 
 interface GoalCardProps {
   goal: Goal
+  xirrData?: {
+    xirr: number
+    xirrPercentage: number
+    formattedXIRR: string
+    converged: boolean
+    error?: string
+    current_value: number
+  }
   onEdit?: (goal: Goal) => void
   onDelete?: (goalId: string) => void
   onMappingChanged?: () => void
 }
 
-export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
+export default function GoalCard({ goal, xirrData, onEdit, onDelete, onMappingChanged }: GoalCardProps) {
   const [showActions, setShowActions] = useState(false)
   const [showMappingModal, setShowMappingModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
@@ -278,8 +286,8 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
                   <div className="flex flex-col items-start sm:items-end">
                     <span className="text-xs sm:text-sm font-medium text-gray-900 break-words">{formatCurrency(goal.mutual_fund_value)}</span>
                     {/* MF XIRR below current value */}
-                    <span className={`text-xs sm:text-xs mt-1 ${goal.xirrPercentage === undefined ? 'text-gray-400' : goal.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {goal.formattedXIRR ? `XIRR: ${goal.formattedXIRR}` : 'XIRR: N/A'}
+                    <span className={`text-xs sm:text-xs mt-1 ${xirrData?.xirrPercentage === undefined ? 'text-gray-400' : xirrData?.xirrPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {xirrData?.formattedXIRR ? `XIRR: ${xirrData.formattedXIRR}` : 'XIRR: N/A'}
                     </span>
                   </div>
                 </div>
@@ -350,7 +358,7 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
       </div>
 
       {showDetailsModal && (
-        <GoalDetailsModal goal={goal} onClose={() => setShowDetailsModal(false)} />
+        <GoalDetailsModal goal={goal} xirrData={xirrData} onClose={() => setShowDetailsModal(false)} />
       )}
 
       {/* Scheme Mapping Modal */}
@@ -375,4 +383,4 @@ export default function GoalCard({ goal, onEdit, onDelete, onMappingChanged }: G
       )}
     </>
   )
-} 
+}

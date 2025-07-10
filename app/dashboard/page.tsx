@@ -46,6 +46,7 @@ interface GoalXirrResult {
   formattedXIRR: string;
   converged: boolean;
   error?: string;
+  current_value: number;
 }
 
 async function getNpsValue(userId: string): Promise<number> {
@@ -181,9 +182,7 @@ async function getStockSummary(userId: string): Promise<StockSummary> {
 }
 
 export default function Dashboard() {
-  const [stockSummary, setStockSummary] = useState<StockSummary | null>(null)
   const [loading, setLoading] = useState(true)
-  const [stockLoading, setStockLoading] = useState(true)
   const [showGoalForm, setShowGoalForm] = useState(false)
   const [latestNavDate, setLatestNavDate] = useState<string | null>(null)
   const [latestNpsNavDate, setLatestNpsNavDate] = useState<string | null>(null)
@@ -239,7 +238,7 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 60 * 12, // 12 hours
   });
 
-  // React Query for Goals with Details
+  // React Query for Goals with Details (load first)
   const {
     data: goals = [],
     isLoading: goalsLoading,
@@ -255,8 +254,10 @@ export default function Dashboard() {
     refetchOnWindowFocus: false,
   });
 
-  // React Query for XIRR calculations (separate cache for better performance)
+  // React Query for XIRR calculations (load after goals, progressive loading)
   const {
+    data: xirrData = {},
+    isLoading: xirrLoading,
     refetch: refetchXIRR
   } = useQuery<Record<string, GoalXirrResult>>({
     queryKey: ['xirr', userId],
@@ -278,7 +279,7 @@ export default function Dashboard() {
       
       return xirrMap;
     },
-    enabled: !!userId,
+    enabled: !!userId && !goalsLoading, // Only load after goals are loaded
     staleTime: 1000 * 60 * 10, // 10 minutes for XIRR (less frequent updates)
     refetchOnWindowFocus: false,
   });
@@ -295,31 +296,20 @@ export default function Dashboard() {
     checkAuth()
   }, [router])
 
-  const loadDashboardData = useCallback(async () => {
-    console.log('[DEBUG_ROSHAN] loadDashboardData called')
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-      setStockLoading(true)
-      console.log('[DEBUG_ROSHAN_LOAD_STOCK_SUMMARY] loading stock data')
-      const stockData = await getStockSummary(session.user.id)
-      console.log('[DEBUG_ROSHAN_STOCK_SUMMARY] stockData:', stockData)
-      setStockSummary(stockData)
-      setStockLoading(false)
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-      console.log('[DEBUG_ROSHAN] error in loadDashboardData:', errorMessage)
-      setStockLoading(false)
-    }
-  }, []);
-
-  // useEffect for loading dashboard data when user is available
-  useEffect(() => {
-    if (userId) {
-      console.log('[DEBUG_ROSHAN] user available, loading dashboard data')
-      loadDashboardData()
-    }
-  }, [userId, loadDashboardData])
+  // React Query for Stock Summary (progressive loading)
+  const {
+    data: stockSummary,
+    isLoading: stockLoading
+  } = useQuery({
+    queryKey: ['stockSummary', userId],
+    queryFn: async () => {
+      if (!userId) throw new Error('No user ID');
+      return await getStockSummary(userId);
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 5, // 5 minutes for stock data
+    refetchOnWindowFocus: false,
+  });
 
   const handleGoalAdded = async () => {
     setShowGoalForm(false)
@@ -591,6 +581,7 @@ export default function Dashboard() {
                   <GoalCard
                     key={goal.id}
                     goal={goal}
+                    xirrData={xirrData[goal.id]}
                     onEdit={handleGoalEdit}
                     onDelete={handleGoalDeleted}
                     onMappingChanged={handleMappingChanged}

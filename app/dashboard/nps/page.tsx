@@ -55,8 +55,6 @@ export default function NPSDashboard() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [showModal, setShowModal] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [navRefreshLoading, setNavRefreshLoading] = useState(false)
   const [editModal, setEditModal] = useState<{ open: boolean, holding: NpsHolding } | null>(null)
   const [editUnits, setEditUnits] = useState('')
   const [editDate, setEditDate] = useState('')
@@ -74,13 +72,6 @@ export default function NPSDashboard() {
       }
       try {
         setLoading(true)
-        // Check admin
-        const { data: profile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .single()
-        if (!profileError && profile?.role === 'admin') setIsAdmin(true)
         // Fetch all funds
         const { data: fundsData, error: fundsError } = await supabase
           .from('nps_funds')
@@ -195,26 +186,6 @@ export default function NPSDashboard() {
       setFormError(errorMessage)
     } finally {
       setFormLoading(false)
-    }
-  }
-
-  // NAV refresh handler
-  const handleNavRefresh = async () => {
-    setNavRefreshLoading(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const resp = await fetch('/api/refresh-nps-nav', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token}`
-        }
-      })
-      const result = await resp.json()
-      console.log('NAV refresh result:', result.logs || ['No logs'])
-    } catch (err: unknown) {
-      console.error('NAV refresh error:', err)
-    } finally {
-      setNavRefreshLoading(false)
     }
   }
 
@@ -344,15 +315,6 @@ export default function NPSDashboard() {
               >
                 + Add Holding
               </button>
-              {isAdmin && (
-                <button
-                  onClick={handleNavRefresh}
-                  disabled={navRefreshLoading}
-                  className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold text-base shadow-md disabled:bg-gray-400"
-                >
-                  {navRefreshLoading ? 'Refreshing NAV...' : 'Refresh NPS NAV'}
-                </button>
-              )}
             </div>
           </div>
           {holdingsWithValue.length === 0 ? (
