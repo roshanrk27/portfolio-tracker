@@ -1091,11 +1091,14 @@ export async function getGoalsWithProgressAndXIRR(userId: string) {
 // Get basic goals without asset calculations (for progressive loading)
 export async function getBasicGoals(userId: string) {
   try {
+    // console.log('[XIRR DEBUG] getBasicGoals called for userId:', userId);
     const { data, error } = await supabaseServer
       .from('goals')
       .select('id, name, description, target_amount, target_date, created_at, updated_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
+
+    // console.log('[XIRR DEBUG] getBasicGoals result:', { data: data?.length || 0, error: error?.message });
 
     if (error) {
       console.error('Error fetching basic goals:', error)
@@ -1374,14 +1377,29 @@ export async function batchCalculateXIRR(
   goals: GoalData[], 
   allMappings: GoalMapping[][], 
   portfolioData?: PortfolioData[]
-) {
+): Promise<Array<{
+  xirr: number;
+  xirrPercentage: number;
+  formattedXIRR: string;
+  converged: boolean;
+  error?: string;
+  current_value: number;
+}>> {
   try {
+    // console.log('[XIRR DEBUG] batchCalculateXIRR called with:', {
+    //   userId,
+    //   goalsCount: goals.length,
+    //   mappingsCount: allMappings.length,
+    //   portfolioDataCount: portfolioData?.length || 0
+    // });
+    
     // 1. Collect all unique scheme-folio pairs and goal IDs
     const allSchemeFolioPairs: { scheme_name: string; folio: string; goalId: string }[] = []
     const goalMappingIndex: Record<string, number> = {} // goalId -> mapping index
     
     goals.forEach((goal, goalIndex) => {
       const mappings = allMappings[goalIndex]
+      // console.log(`[XIRR DEBUG] Processing goal ${goal.id} with ${mappings.length} mappings`);
       mappings.forEach((mapping, mappingIndex) => {
         if (mapping.source_type === 'mutual_fund' && mapping.scheme_name) {
           allSchemeFolioPairs.push({
@@ -1390,11 +1408,15 @@ export async function batchCalculateXIRR(
             goalId: goal.id
           })
           goalMappingIndex[goal.id] = mappingIndex
+          // console.log(`[XIRR DEBUG] Added mutual fund mapping: ${mapping.scheme_name}|${mapping.folio}`);
         }
       })
     })
 
+    // console.log('[XIRR DEBUG] Total scheme-folio pairs found:', allSchemeFolioPairs.length);
+    
     if (allSchemeFolioPairs.length === 0) {
+      // console.log('[XIRR DEBUG] No mutual fund mappings found, returning 0% XIRR for all goals');
       // No mutual fund mappings, return empty XIRR data for all goals
       return goals.map(() => ({
         xirr: 0,
@@ -1408,11 +1430,13 @@ export async function batchCalculateXIRR(
 
     // 2. Batch fetch all transactions for all schemes
     const uniqueSchemeFolios = Array.from(new Set(allSchemeFolioPairs.map(p => `${p.scheme_name}|${p.folio}`)))
+    // console.log('[XIRR DEBUG] Unique scheme-folios to fetch transactions for:', uniqueSchemeFolios);
     const allTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
     
     // Fetch all transactions in batches
     for (const schemeFolio of uniqueSchemeFolios) {
       const [scheme_name, folio] = schemeFolio.split('|')
+      // console.log(`[XIRR DEBUG] Fetching transactions for: ${scheme_name}|${folio}`);
       const { data: transactions } = await supabaseServer
         .from('transactions')
         .select('date, amount, transaction_type')
@@ -1426,29 +1450,55 @@ export async function batchCalculateXIRR(
         amount: parseFloat(tx.amount || '0'),
         type: tx.transaction_type
       })) || []
+      
+      // console.log(`[XIRR DEBUG] Found ${allTransactions[schemeFolio].length} transactions for ${scheme_name}|${folio}`);
     }
 
     // 3. Use passed portfolio data or fetch if not provided
     const allPortfolioValues: Record<string, number> = {}
-    const portfolioEntries = portfolioData || await supabaseServer
-      .from('current_portfolio')
-      .select('scheme_name, folio, current_value')
-      .eq('user_id', userId)
-      .then(result => result.data || [])
+    
+    // console.log('[XIRR DEBUG] Checking portfolioData:', {
+    //   portfolioDataExists: !!portfolioData,
+    //   portfolioDataLength: portfolioData?.length || 0,
+    //   portfolioDataIsArray: Array.isArray(portfolioData)
+    // });
+    
+    let portfolioEntries: PortfolioData[] = [];
+    if (!portfolioData || portfolioData.length === 0) {
+      // console.log('[XIRR DEBUG] PortfolioData is empty or null, fetching from database...');
+      const result = await supabaseServer
+        .from('current_portfolio')
+        .select('scheme_name, folio, current_value')
+        .eq('user_id', userId);
+      portfolioEntries = result.data || [];
+      // console.log('[XIRR DEBUG] Fetched portfolio entries from database:', portfolioEntries?.length || 0);
+    } else {
+      // console.log('[XIRR DEBUG] Using provided portfolioData:', portfolioData.length, 'entries');
+      portfolioEntries = portfolioData;
+    }
+    
+    // console.log('[XIRR DEBUG] Final portfolio entries count:', portfolioEntries?.length || 0);
+    // console.log('[XIRR DEBUG] All portfolio entries:', portfolioEntries);
     
     if (portfolioEntries) {
       for (const entry of portfolioEntries) {
         const key = `${entry.scheme_name}|${entry.folio}`
         allPortfolioValues[key] = parseFloat(entry.current_value || '0')
+        // console.log(`[XIRR DEBUG] Portfolio entry: ${key} = ${allPortfolioValues[key]}`);
       }
     }
+    
+    // console.log('[XIRR DEBUG] All portfolio values keys:', Object.keys(allPortfolioValues));
 
     // 4. Calculate XIRR for each goal using pre-fetched data
     const xirrResults = goals.map((goal, goalIndex) => {
       const mappings = allMappings[goalIndex]
       const mutualFundMappings = mappings.filter(m => m.source_type === 'mutual_fund')
       
+      // console.log(`[XIRR DEBUG] Goal ${goal.id} (${goal.name}): ${mutualFundMappings.length} mutual fund mappings`);
+      
       if (mutualFundMappings.length === 0) {
+        // console.log(`[XIRR DEBUG] Goal ${goal.id}: No mutual fund mappings, returning 0% XIRR`);
         return {
           xirr: 0,
           xirrPercentage: 0,
@@ -1462,13 +1512,19 @@ export async function batchCalculateXIRR(
       // Collect all transactions and current values for this goal's mutual fund mappings
       const goalSchemeTransactions: Record<string, Array<{ date: string; amount: number; type: string }>> = {}
       const schemeCurrentValues: Record<string, number> = {}
-      
+     // console.log('[XIRR DEBUG] allPortfolioValues:', allPortfolioValues);
       for (const mapping of mutualFundMappings) {
         const key = `${mapping.scheme_name}-${mapping.folio}`
         const schemeFolioKey = `${mapping.scheme_name}|${mapping.folio}`
         
         goalSchemeTransactions[key] = allTransactions[schemeFolioKey] || []
         schemeCurrentValues[key] = allPortfolioValues[schemeFolioKey] || 0
+        
+        // console.log(`[XIRR DEBUG] Goal ${goal.id} mapping ${mapping.scheme_name}|${mapping.folio}:`);
+        // console.log(`[XIRR DEBUG]   Looking up key: "${schemeFolioKey}"`);
+        // console.log(`[XIRR DEBUG]   Available portfolio keys:`, Object.keys(allPortfolioValues));
+        // console.log(`[XIRR DEBUG]   Transactions: ${goalSchemeTransactions[key].length}`);
+        // console.log(`[XIRR DEBUG]   Current value: ${schemeCurrentValues[key]}`);
       }
 
       // Calculate XIRR for this goal
@@ -1477,6 +1533,8 @@ export async function batchCalculateXIRR(
         goalSchemeTransactions,
         schemeCurrentValues
       )
+      
+      // console.log(`[XIRR DEBUG] Goal ${goal.id} XIRR result:`, xirrResult);
 
       const totalCurrentValue = Object.values(schemeCurrentValues).reduce((sum, value) => sum + value, 0)
 

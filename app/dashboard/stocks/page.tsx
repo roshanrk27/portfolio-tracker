@@ -71,7 +71,7 @@ export default function StocksPage() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [openMenuId])
+  }, [openMenuId, setOpenMenuId])
 
   // Separate query for stock data (database)
   const {

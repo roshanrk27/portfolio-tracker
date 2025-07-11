@@ -396,9 +396,9 @@ export function calculateRequiredMonthlySIP(
     const requiredMonthlySIP = Math.ceil(remainingTarget / totalFactor)
     const totalInvested = requiredMonthlySIP * months
 
-    // Verify the calculation
+    // Verify the calculation - return only the remaining target amount
     const verification = calculateCorpus(requiredMonthlySIP, xirrPercent, months)
-    const finalCorpus = futureValueOfExisting + verification
+    const finalCorpus = verification // Only the SIP corpus, not adding existing corpus
 
     return {
       monthlySIP: requiredMonthlySIP,

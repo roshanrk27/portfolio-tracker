@@ -256,7 +256,7 @@ export default function GoalDetailsModal({ goal, xirrData, onClose }: GoalDetail
       const errorMessage = err instanceof Error ? err.message : 'Error loading scheme details'
       setError(errorMessage)
     }
-  }, [goal.id])
+  }, [goal.id, xirrData])
 
   const loadNpsDetails = useCallback(async () => {
     try {

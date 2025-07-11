@@ -48,6 +48,10 @@ export default function RequiredSIPCalculator({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [scenarios, setScenarios] = useState<RequiredSIPResult[]>([])
   const [isCalculating, setIsCalculating] = useState(false)
+  const [corpusBreakdown, setCorpusBreakdown] = useState<{
+    futureValueOfExisting: number
+    remainingTarget: number
+  } | null>(null)
 
   // Update form data when initialData changes
   useEffect(() => {
@@ -100,8 +104,26 @@ export default function RequiredSIPCalculator({
     }
 
     setIsCalculating(true)
+    setCorpusBreakdown(null) // Clear previous breakdown
     
     try {
+      // Calculate corpus breakdown for display
+      const monthlyRate = formData.xirr / 100 / 12
+      const futureValueOfExisting = formData.existingCorpus * Math.pow(1 + monthlyRate, formData.months)
+      const remainingTarget = formData.targetAmount - futureValueOfExisting
+      
+      setCorpusBreakdown({
+        futureValueOfExisting,
+        remainingTarget
+      })
+      
+      // Check if existing corpus is sufficient
+      if (remainingTarget <= 0) {
+        setScenarios([])
+        setErrors({ general: 'Your existing corpus is sufficient to reach the target. No additional SIP is required.' })
+        return
+      }
+      
       const scenarios = generateStepUpScenarios(
         formData.targetAmount,
         formData.months,
@@ -249,7 +271,7 @@ export default function RequiredSIPCalculator({
               style={{ background: '#E8F0FE', color: '#1A202C' }}
               placeholder="Enter existing corpus"
               min="0"
-              step="1000"
+              step="any"
             />
             {errors.existingCorpus && (
               <p className="mt-1 text-sm text-red-600">{errors.existingCorpus}</p>
@@ -318,7 +340,46 @@ export default function RequiredSIPCalculator({
       {scenarios.length > 0 && (
         <div className="mt-8">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Required SIP Scenarios</h3>
+          
+          {/* Corpus Breakdown Display */}
+          {corpusBreakdown && formData.existingCorpus > 0 && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-blue-800 mb-3">Corpus Breakdown</h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-xs text-blue-600 font-medium">Existing Corpus</div>
+                  <div className="text-lg font-bold text-blue-900">
+                    {formatIndianNumberWithSuffix(formData.existingCorpus)}
+                  </div>
+                  <div className="text-xs text-blue-500">Current Value</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-green-600 font-medium">Future Value</div>
+                  <div className="text-lg font-bold text-green-900">
+                    {formatIndianNumberWithSuffix(corpusBreakdown.futureValueOfExisting)}
+                  </div>
+                  <div className="text-xs text-green-500">After {formData.months} months</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-orange-600 font-medium">Remaining Target</div>
+                  <div className="text-lg font-bold text-orange-900">
+                    {formatIndianNumberWithSuffix(corpusBreakdown.remainingTarget)}
+                  </div>
+                  <div className="text-xs text-orange-500">To be achieved via SIP</div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-blue-600">
+                <strong>Note:</strong> The SIP amounts below are calculated to achieve the remaining target amount.
+              </div>
+            </div>
+          )}
+          
           <div className="overflow-x-auto">
+            {formData.existingCorpus > 0 && (
+              <div className="mb-2 text-xs text-gray-600">
+                <strong>Note:</strong> &ldquo;Total Invested&rdquo; shows only the new SIP investments. Your existing corpus of {formatIndianNumberWithSuffix(formData.existingCorpus)} will grow to {formatIndianNumberWithSuffix(corpusBreakdown?.futureValueOfExisting || 0)} and contribute to the final corpus.
+              </div>
+            )}
             <table className="min-w-full bg-white border border-gray-200 rounded-lg">
               <thead className="bg-gray-50">
                 <tr>
@@ -334,7 +395,7 @@ export default function RequiredSIPCalculator({
                     Total Invested
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Final Corpus
+                    {formData.existingCorpus > 0 ? 'Total Corpus' : 'Final Corpus'}
                   </th>
                 </tr>
               </thead>

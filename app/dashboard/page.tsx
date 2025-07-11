@@ -193,6 +193,8 @@ export default function Dashboard() {
   // Fetch user session and NAV date for cache key
   const [userId, setUserId] = useState<string | null>(null);
 
+  // console.log('[XIRR DEBUG] Dashboard component rendered');
+
   useEffect(() => {
     const fetchSessionAndNavDate = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -200,6 +202,7 @@ export default function Dashboard() {
         router.push('/auth/login');
         return;
       }
+      // console.log('[XIRR DEBUG] Session loaded, setting userId:', session.user.id);
       setUserId(session.user.id);
       const navDate = await getLatestNavDate();
       setLatestNavDate(navDate);
@@ -249,7 +252,10 @@ export default function Dashboard() {
     queryKey: ['basicGoals', userId],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
-      return await getBasicGoals(userId);
+      // console.log('[XIRR DEBUG] Phase 1: Fetching basic goals for user:', userId);
+      const goals = await getBasicGoals(userId);
+      // console.log('[XIRR DEBUG] Phase 1: Found', goals.length, 'basic goals');
+      return goals;
     },
     enabled: !!userId,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -265,8 +271,12 @@ export default function Dashboard() {
     queryKey: ['goalAssets', userId],
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
+      // console.log('[XIRR DEBUG] Phase 2: Fetching goal assets for user:', userId);
       const goalIds = basicGoals.map(goal => goal.id);
-      return await getGoalAssets(userId, goalIds);
+      // console.log('[XIRR DEBUG] Phase 2: Goal IDs:', goalIds);
+      const assets = await getGoalAssets(userId, goalIds);
+      // console.log('[XIRR DEBUG] Phase 2: Found assets for', Object.keys(assets).length, 'goals');
+      return assets;
     },
     enabled: !!userId && basicGoals.length > 0,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -282,17 +292,35 @@ export default function Dashboard() {
     queryFn: async () => {
       if (!userId) throw new Error('No user ID');
       
+      // console.log('[XIRR DEBUG] Starting XIRR calculation for user:', userId);
+      
       // Get basic goals and mappings
       const goalsData = await getGoals(userId);
-      if (!goalsData || goalsData.length === 0) return {};
+      // console.log('[XIRR DEBUG] Goals data:', goalsData?.length || 0, 'goals');
+      if (!goalsData || goalsData.length === 0) {
+        // console.log('[XIRR DEBUG] No goals found, returning empty result');
+        return {};
+      }
       
       const allMappings = await Promise.all(goalsData.map(goal => getGoalMappings(goal.id)));
+      // console.log('[XIRR DEBUG] All mappings:', allMappings.map(m => m.length));
+      
+      // Debug: Log each goal and its mappings
+      // goalsData.forEach((goal, index) => {
+      //   console.log(`[XIRR DEBUG] Goal ${goal.id} (${goal.name}):`, allMappings[index].length, 'mappings');
+      //   allMappings[index].forEach((mapping, mIndex) => {
+      //     console.log(`[XIRR DEBUG]   Mapping ${mIndex}:`, mapping);
+      //   });
+      // });
+      
       const xirrResults = await batchCalculateXIRR(userId, goalsData, allMappings, []);
+      // console.log('[XIRR DEBUG] XIRR results:', xirrResults);
       
       // Create a map of goal ID to XIRR data
       const xirrMap: Record<string, GoalXirrResult> = {};
       goalsData.forEach((goal, index) => {
         xirrMap[goal.id] = xirrResults[index];
+        // console.log(`[XIRR DEBUG] Goal ${goal.id} XIRR result:`, xirrResults[index]);
       });
       
       return xirrMap;
@@ -301,6 +329,19 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 10, // 10 minutes for XIRR (less frequent updates)
     refetchOnWindowFocus: false,
   });
+
+  // Debug logging for query state
+  // console.log('[XIRR DEBUG] Query state:', {
+  //   userId: !!userId,
+  //   userIdValue: userId,
+  //   basicGoalsLength: basicGoals.length,
+  //   goalAssetsKeys: Object.keys(goalAssets).length,
+  //   enabled: !!userId && basicGoals.length > 0 && Object.keys(goalAssets).length > 0,
+  //   xirrLoading,
+  //   xirrError: xirrError?.message,
+  //   basicGoalsLoading,
+  //   goalAssetsLoading
+  // });
 
   useEffect(() => {
     const checkAuth = async () => {
