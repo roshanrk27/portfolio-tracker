@@ -67,6 +67,12 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   const [availableNpsHoldings, setAvailableNpsHoldings] = useState<NpsHolding[]>([])
   const [selectedNpsIds, setSelectedNpsIds] = useState<string[]>([])
   const [npsMappingsChanged, setNpsMappingsChanged] = useState(false)
+  // BEGIN: Mutual Fund Search Box State
+  const [mfSearchTerm, setMfSearchTerm] = useState('');
+  // END: Mutual Fund Search Box State
+  // BEGIN: Mutual Fund Multi-Select State
+  const [selectedSchemeKeys, setSelectedSchemeKeys] = useState<string[]>([]);
+  // END: Mutual Fund Multi-Select State
 
   const loadData = useCallback(async () => {
     try {
@@ -184,9 +190,9 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         return
       }
 
-      // Refresh mappings
-      const mappings = await getGoalMappings(goal.id)
-      setCurrentMappings(mappings)
+      // BEGIN: Refresh lists after mapping
+      await loadData();
+      // END: Refresh lists after mapping
       onMappingUpdated()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding mapping'
@@ -263,8 +269,10 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         }
       }
       setSelectedStockIds([])
+      // BEGIN: Refresh lists after mapping
+      await loadData();
+      // END: Refresh lists after mapping
       // Do not close the modal; let user close explicitly
-      await loadData()
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding stocks'
       setError(errorMessage)
@@ -298,7 +306,9 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         }
       }
       setSelectedNpsIds([])
-      await loadData()
+      // BEGIN: Refresh lists after mapping
+      await loadData();
+      // END: Refresh lists after mapping
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding NPS holdings'
       setError(errorMessage)
@@ -362,7 +372,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-6xl mx-4 max-h-[90vh] flex flex-col" style={{ minHeight: '500px' }}>
         <div className="flex justify-between items-center mb-6">
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Map Investments to Goal</h2>
@@ -385,195 +395,265 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('mutual_funds')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'mutual_funds'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Mutual Funds
-            </button>
-            <button
-              onClick={() => setActiveTab('stocks')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'stocks'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Stocks
-            </button>
-            <button
-              onClick={() => setActiveTab('nps')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'nps'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              NPS
-            </button>
-          </nav>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Current Mappings */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Mapped Investments</h3>
-            {currentMappings.length === 0 ? (
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <p className="text-gray-600">No investments mapped to this goal yet.</p>
-                <p className="text-sm text-gray-500 mt-1">Add investments from the right panel.</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {currentMappings.map((mapping) => (
-                  <div key={mapping.id} className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-sm font-medium text-gray-900">{mapping.scheme_name}</span>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                            {getSourceTypeDisplayName(mapping.source_type)}
-                          </span>
-                        </div>
-                        {mapping.source_type === 'stock' && mapping.source_id && (
-                          <MappedStockInfo stockId={mapping.source_id} />
-                        )}
-                        {mapping.folio && (
-                          <p className="text-sm text-gray-600 mt-1">Folio: {mapping.folio}</p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => removeMapping(mapping.id)}
-                        disabled={saving}
-                        className="text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* BEGIN: Modal Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Tabs */}
+          <div className="border-b border-gray-200 mb-6">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('mutual_funds')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'mutual_funds'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Mutual Funds
+              </button>
+              <button
+                onClick={() => setActiveTab('stocks')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'stocks'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Stocks
+              </button>
+              <button
+                onClick={() => setActiveTab('nps')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'nps'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                NPS
+              </button>
+            </nav>
           </div>
 
-          {/* Available Investments */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Available Investments</h3>
-            
-            {activeTab === 'mutual_funds' && (
-              <div className="space-y-3">
-                {getUnmappedSchemes().length === 0 ? (
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <p className="text-gray-600">All mutual funds are already mapped to this goal.</p>
-                  </div>
-                ) : (
-                  getUnmappedSchemes().map((scheme) => (
-                    <div key={`${scheme.scheme_name}-${scheme.folio}`} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{scheme.scheme_name}</p>
-                          {scheme.folio && (
-                            <p className="text-sm text-gray-600">Folio: {scheme.folio}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Current Mappings */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Mapped Investments</h3>
+              {currentMappings.length === 0 ? (
+                <div className="bg-gray-50 rounded-lg p-4 text-center">
+                  <p className="text-gray-600">No investments mapped to this goal yet.</p>
+                  <p className="text-sm text-gray-500 mt-1">Add investments from the right panel.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {currentMappings.map((mapping) => (
+                    <div key={mapping.id} className="bg-green-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-medium text-gray-900">{mapping.scheme_name}</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                              {getSourceTypeDisplayName(mapping.source_type)}
+                            </span>
+                          </div>
+                          {mapping.source_type === 'stock' && mapping.source_id && (
+                            <MappedStockInfo stockId={mapping.source_id} />
+                          )}
+                          {mapping.folio && (
+                            <p className="text-sm text-gray-600 mt-1">Folio: {mapping.folio}</p>
                           )}
                         </div>
                         <button
-                          onClick={() => addMapping(scheme.scheme_name, scheme.folio, 'mutual_fund', undefined)}
+                          onClick={() => removeMapping(mapping.id)}
                           disabled={saving}
-                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
                         >
-                          Add
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
 
-            {activeTab === 'stocks' && (
-              <div className="space-y-3">
-                {getUnmappedStocks().length === 0 ? (
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <p className="text-gray-600">All stocks are already mapped to a goal.</p>
+            {/* Available Investments */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Available Investments</h3>
+              
+              {activeTab === 'mutual_funds' && (
+                <div className="space-y-3">
+                  {/* BEGIN: Mutual Fund Search Box */}
+                  <div className="mb-2">
+                    <input
+                      type="text"
+                      value={mfSearchTerm}
+                      onChange={e => setMfSearchTerm(e.target.value)}
+                      placeholder="Search by scheme name or folio..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
+                    />
                   </div>
-                ) : (
-                  <>
-                    {getUnmappedStocks().map((stock) => (
-                      <div key={stock.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedStockIds.includes(stock.id)}
-                            onChange={() => handleStockCheckbox(stock.id)}
-                            className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            disabled={saving}
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{stock.stock_code}</p>
-                            <p className="text-sm text-gray-600">{stock.quantity} shares • {stock.exchange}</p>
+                  {/* END: Mutual Fund Search Box */}
+                  {(() => {
+                    const filteredSchemes = getUnmappedSchemes().filter(scheme => {
+                      const term = mfSearchTerm.trim().toLowerCase();
+                      if (!term) return true;
+                      return (
+                        scheme.scheme_name.toLowerCase().includes(term) ||
+                        (scheme.folio && scheme.folio.toLowerCase().includes(term))
+                      );
+                    });
+                    return filteredSchemes.length === 0 ? (
+                      <div className="bg-gray-50 rounded-lg p-4 text-center">
+                        <p className="text-gray-600">All mutual funds are already mapped to this goal.</p>
+                      </div>
+                    ) : (
+                      <>
+                        {filteredSchemes.map((scheme) => {
+                          const key = `${scheme.scheme_name}-${scheme.folio || ''}`;
+                          const checked = selectedSchemeKeys.includes(key);
+                          return (
+                            <div key={key} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                              <div className="flex items-center">
+                                {/* BEGIN: Mutual Fund Checkbox */}
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => setSelectedSchemeKeys(prev =>
+                                    checked ? prev.filter(k => k !== key) : [...prev, key]
+                                  )}
+                                  className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                  disabled={saving}
+                                />
+                                {/* END: Mutual Fund Checkbox */}
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900">{scheme.scheme_name}</p>
+                                  {scheme.folio && (
+                                    <p className="text-sm text-gray-600">Folio: {scheme.folio}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {/* BEGIN: Add Selected Mutual Funds Button */}
+                        <button
+                          onClick={async () => {
+                            setSaving(true);
+                            setError('');
+                            try {
+                              for (const key of selectedSchemeKeys) {
+                                const [scheme_name, ...folioParts] = key.split('-');
+                                const folio = folioParts.join('-');
+                                await addMapping(scheme_name, folio, 'mutual_fund', undefined);
+                              }
+                              setSelectedSchemeKeys([]);
+                            } catch {
+                              setError('Error adding selected mutual funds');
+                            } finally {
+                              setSaving(false);
+                            }
+                          }}
+                          disabled={saving || selectedSchemeKeys.length === 0}
+                          className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          Add Selected
+                        </button>
+                        {/* END: Add Selected Mutual Funds Button */}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {activeTab === 'stocks' && (
+                <div className="space-y-3">
+                  {getUnmappedStocks().length === 0 ? (
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <p className="text-gray-600">All stocks are already mapped to a goal.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {getUnmappedStocks().map((stock) => (
+                        <div key={stock.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedStockIds.includes(stock.id)}
+                              onChange={() => handleStockCheckbox(stock.id)}
+                              className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              disabled={saving}
+                            />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{stock.stock_code}</p>
+                              <p className="text-sm text-gray-600">{stock.quantity} shares • {stock.exchange}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={handleAddSelectedStocks}
-                      disabled={saving || selectedStockIds.length === 0}
-                      className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      Add Selected
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+                      ))}
+                      <button
+                        onClick={handleAddSelectedStocks}
+                        disabled={saving || selectedStockIds.length === 0}
+                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Add Selected
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
-            {activeTab === 'nps' && (
-              <div className="space-y-3">
-                {availableNpsHoldings.length === 0 ? (
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <p className="text-gray-600">All NPS holdings are already mapped to a goal.</p>
-                  </div>
-                ) : (
-                  <>
-                    {availableNpsHoldings.map((nps: NpsHolding) => (
-                      <div key={nps.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={selectedNpsIds.includes(nps.id)}
-                            onChange={() => handleNpsCheckbox(nps.id)}
-                            className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            disabled={saving}
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{nps.nps_funds?.fund_name || nps.fund_code}</p>
-                            <p className="text-sm text-gray-600">{nps.fund_code} • {nps.units} units</p>
+              {activeTab === 'nps' && (
+                <div className="space-y-3">
+                  {availableNpsHoldings.length === 0 ? (
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <p className="text-gray-600">All NPS holdings are already mapped to a goal.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {availableNpsHoldings.map((nps: NpsHolding) => (
+                        <div key={nps.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedNpsIds.includes(nps.id)}
+                              onChange={() => handleNpsCheckbox(nps.id)}
+                              className="mr-3 h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              disabled={saving}
+                            />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{nps.nps_funds?.fund_name || nps.fund_code}</p>
+                              <p className="text-sm text-gray-600">{nps.fund_code} • {nps.units} units</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={handleAddSelectedNps}
-                      disabled={saving || selectedNpsIds.length === 0}
-                      className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      Add Selected
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+                      ))}
+                      <button
+                        onClick={handleAddSelectedNps}
+                        disabled={saving || selectedNpsIds.length === 0}
+                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        Add Selected
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        {/* END: Modal Scrollable Content */}
+
+        {/* BEGIN: Modal Footer with Done Button */}
+        <div className="mt-6 flex justify-end border-t pt-4 bg-white sticky bottom-0 z-20">
+          <button
+            onClick={handleClose}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          >
+            Done
+          </button>
+        </div>
+        {/* END: Modal Footer with Done Button */}
       </div>
     </div>
   )
