@@ -66,7 +66,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   const [selectedStockIds, setSelectedStockIds] = useState<string[]>([])
   const [availableNpsHoldings, setAvailableNpsHoldings] = useState<NpsHolding[]>([])
   const [selectedNpsIds, setSelectedNpsIds] = useState<string[]>([])
-  const [npsMappingsChanged, setNpsMappingsChanged] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
   // BEGIN: Mutual Fund Search Box State
   const [mfSearchTerm, setMfSearchTerm] = useState('');
   // END: Mutual Fund Search Box State
@@ -193,7 +193,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       // BEGIN: Refresh lists after mapping
       await loadData();
       // END: Refresh lists after mapping
-      onMappingUpdated()
+      setHasChanges(true)
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding mapping'
       setError(errorMessage)
@@ -205,6 +205,13 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   const removeMapping = async (mappingId: string) => {
     try {
       setSaving(true)
+      // Get mapping details before deletion to update available schemes
+      const mappingToRemove = currentMappings.find(m => m.id === mappingId)
+      if (!mappingToRemove) {
+        setError('Mapping not found')
+        return
+      }
+      
       const { error: deleteError } = await supabase
         .from('goal_scheme_mapping')
         .delete()
@@ -216,10 +223,47 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         return
       }
 
-      // Refresh mappings
-      const mappings = await getGoalMappings(goal.id)
-      setCurrentMappings(mappings)
-      onMappingUpdated()
+      // Update current mappings by removing the deleted mapping
+      setCurrentMappings(prev => prev.filter(m => m.id !== mappingId))
+      
+      // Update allGoalMappings to reflect the removal
+      setAllGoalMappings(prev => prev.filter(m => m.id !== mappingId))
+      
+      // If it's a mutual fund, add it back to available schemes
+      if (mappingToRemove.source_type === 'mutual_fund') {
+        const schemeKey = `${mappingToRemove.scheme_name}|${mappingToRemove.folio || ''}`
+        const existingSchemeKeys = new Set(availableSchemes.map(s => `${s.scheme_name}|${s.folio || ''}`))
+        if (!existingSchemeKeys.has(schemeKey)) {
+          setAvailableSchemes(prev => [...prev, {
+            scheme_name: mappingToRemove.scheme_name,
+            folio: mappingToRemove.folio || ''
+          }])
+        }
+      }
+      
+      // If it's a stock, add it back to available stocks
+      if (mappingToRemove.source_type === 'stock' && mappingToRemove.source_id) {
+        const existingStockIds = new Set(availableStocks.map(s => s.id))
+        if (!existingStockIds.has(mappingToRemove.source_id)) {
+          const stockToAdd = availableStocks.find(s => s.id === mappingToRemove.source_id)
+          if (stockToAdd) {
+            setAvailableStocks(prev => [...prev, stockToAdd])
+          }
+        }
+      }
+      
+      // If it's NPS, add it back to available NPS holdings
+      if (mappingToRemove.source_type === 'nps' && mappingToRemove.source_id) {
+        const existingNpsIds = new Set(availableNpsHoldings.map(h => h.id))
+        if (!existingNpsIds.has(mappingToRemove.source_id)) {
+          const npsToAdd = availableNpsHoldings.find(h => h.id === mappingToRemove.source_id)
+          if (npsToAdd) {
+            setAvailableNpsHoldings(prev => [...prev, npsToAdd])
+          }
+        }
+      }
+      
+      setHasChanges(true)
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error removing mapping'
       setError(errorMessage)
@@ -232,10 +276,10 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
 
   const getUnmappedSchemes = () => {
     const mappedSchemeKeys = new Set(
-      allGoalMappings.map(m => `${m.scheme_name}-${m.folio || ''}`)
+      allGoalMappings.map(m => `${m.scheme_name}|${m.folio || ''}`)
     )
     return availableSchemes.filter(scheme => {
-      const key = `${scheme.scheme_name}-${scheme.folio || ''}`
+      const key = `${scheme.scheme_name}|${scheme.folio || ''}`
       return !mappedSchemeKeys.has(key)
     })
   }
@@ -272,6 +316,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
       // BEGIN: Refresh lists after mapping
       await loadData();
       // END: Refresh lists after mapping
+      setHasChanges(true)
       // Do not close the modal; let user close explicitly
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding stocks'
@@ -302,13 +347,13 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
             'nps',
             nps.id
           )
-          setNpsMappingsChanged(true)
         }
       }
       setSelectedNpsIds([])
       // BEGIN: Refresh lists after mapping
       await loadData();
       // END: Refresh lists after mapping
+      setHasChanges(true)
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Error adding NPS holdings'
       setError(errorMessage)
@@ -351,7 +396,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
   }
 
   const handleClose = () => {
-    if (npsMappingsChanged) {
+    if (hasChanges) {
       onMappingUpdated()
     }
     onClose()
@@ -398,7 +443,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
         {/* BEGIN: Modal Scrollable Content */}
         <div className="flex-1 overflow-y-auto">
           {/* Tabs */}
-          <div className="border-b border-gray-200 mb-6">
+          <div className="border-b border-gray-200 mb-6 sticky top-0 z-10 bg-white">
             <nav className="-mb-px flex space-x-8">
               <button
                 onClick={() => setActiveTab('mutual_funds')}
@@ -510,7 +555,7 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
                     ) : (
                       <>
                         {filteredSchemes.map((scheme) => {
-                          const key = `${scheme.scheme_name}-${scheme.folio || ''}`;
+                          const key = `${scheme.scheme_name}|${scheme.folio || ''}`;
                           const checked = selectedSchemeKeys.includes(key);
                           return (
                             <div key={key} className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex items-center justify-between">
@@ -536,30 +581,6 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
                             </div>
                           );
                         })}
-                        {/* BEGIN: Add Selected Mutual Funds Button */}
-                        <button
-                          onClick={async () => {
-                            setSaving(true);
-                            setError('');
-                            try {
-                              for (const key of selectedSchemeKeys) {
-                                const [scheme_name, ...folioParts] = key.split('-');
-                                const folio = folioParts.join('-');
-                                await addMapping(scheme_name, folio, 'mutual_fund', undefined);
-                              }
-                              setSelectedSchemeKeys([]);
-                            } catch {
-                              setError('Error adding selected mutual funds');
-                            } finally {
-                              setSaving(false);
-                            }
-                          }}
-                          disabled={saving || selectedSchemeKeys.length === 0}
-                          className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          Add Selected
-                        </button>
-                        {/* END: Add Selected Mutual Funds Button */}
                       </>
                     );
                   })()}
@@ -591,13 +612,6 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
                           </div>
                         </div>
                       ))}
-                      <button
-                        onClick={handleAddSelectedStocks}
-                        disabled={saving || selectedStockIds.length === 0}
-                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        Add Selected
-                      </button>
                     </>
                   )}
                 </div>
@@ -628,13 +642,6 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
                           </div>
                         </div>
                       ))}
-                      <button
-                        onClick={handleAddSelectedNps}
-                        disabled={saving || selectedNpsIds.length === 0}
-                        className="mt-4 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        Add Selected
-                      </button>
                     </>
                   )}
                 </div>
@@ -646,6 +653,75 @@ export default function GoalMappingModal({ goal, onClose, onMappingUpdated }: Go
 
         {/* BEGIN: Modal Footer with Done Button */}
         <div className="mt-6 flex justify-end border-t pt-4 bg-white sticky bottom-0 z-20">
+          {/* Add Selected Button - only show when items are selected in current tab */}
+          {activeTab === 'mutual_funds' && selectedSchemeKeys.length > 0 && (
+            <button
+              onClick={async () => {
+                setSaving(true);
+                setError('');
+                try {
+                  // Build array of mapping objects for batch insert
+                  const mappingObjects = selectedSchemeKeys.map(key => {
+                    const [scheme_name, ...folioParts] = key.split('|');
+                    const folio = folioParts.join('|');
+                    return {
+                      goal_id: goal.id,
+                      scheme_name: scheme_name,
+                      folio: folio,
+                      source_type: 'mutual_fund' as const,
+                      source_id: undefined,
+                      allocation_percentage: 100
+                    };
+                  });
+                  
+                  // Perform batch insert
+                  const { error: insertError } = await supabase
+                    .from('goal_scheme_mapping')
+                    .insert(mappingObjects);
+                  
+                  if (insertError) {
+                    console.error('Error adding mappings:', insertError);
+                    setError(insertError.message);
+                    return;
+                  }
+                  
+                  // Refresh data once after batch insert
+                  await loadData();
+                  setHasChanges(true);
+                  setSelectedSchemeKeys([]);
+                } catch {
+                  setError('Error adding selected mutual funds');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="mr-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              Add Selected
+            </button>
+          )}
+          
+          {activeTab === 'stocks' && selectedStockIds.length > 0 && (
+            <button
+              onClick={handleAddSelectedStocks}
+              disabled={saving}
+              className="mr-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              Add Selected
+            </button>
+          )}
+          
+          {activeTab === 'nps' && selectedNpsIds.length > 0 && (
+            <button
+              onClick={handleAddSelectedNps}
+              disabled={saving}
+              className="mr-3 bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+            >
+              Add Selected
+            </button>
+          )}
+          
           <button
             onClick={handleClose}
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"

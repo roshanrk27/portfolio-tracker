@@ -166,8 +166,19 @@ export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoad
       <div
         className="bg-white rounded-lg shadow-md border border-gray-200 p-4 sm:p-6 hover:shadow-lg transition-shadow cursor-pointer"
         onClick={e => {
+          console.log('[DEBUG_GOAL_CARD] GoalCard clicked:', {
+            goalId: goal.id,
+            goalName: goal.name,
+            target: e.target,
+            currentTarget: e.currentTarget,
+            timestamp: new Date().toISOString(),
+            stack: new Error().stack
+          })
+          
           // Prevent modal open if clicking actions menu
           if ((e.target as HTMLElement).closest('.goal-actions-menu')) return
+          
+          console.log('[DEBUG_GOAL_CARD] Setting showDetailsModal to true for goal:', goal.name)
           setShowDetailsModal(true)
         }}
       >
@@ -376,7 +387,10 @@ export default function GoalCard({ goal, xirrData, isLoadingXIRR = false, isLoad
         {/* Map Schemes Button */}
         <div className="mt-4 pt-4 border-t border-gray-200">
           <button
-            onClick={() => setShowMappingModal(true)}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMappingModal(true)
+            }}
             className="w-full bg-blue-600 text-white px-3 py-2 rounded-md text-sm hover:bg-blue-700 transition-colors"
           >
             Map Investments
