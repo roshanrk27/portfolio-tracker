@@ -62,8 +62,15 @@ function ResetPasswordContent() {
       return
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long')
+    // Validate password strength
+    const hasUpperCase = /[A-Z]/.test(password)
+    const hasLowerCase = /[a-z]/.test(password)
+    const hasNumbers = /\d/.test(password)
+    const hasSpecialChar = /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)
+    const isLongEnough = password.length >= 8
+    
+    if (!isLongEnough || !hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      setError('Password must be at least 8 characters with uppercase, lowercase, numbers, and special characters')
       return
     }
 
@@ -147,15 +154,23 @@ function ResetPasswordContent() {
             <ul className="space-y-2">
               <li className="flex items-start space-x-2">
                 <span className="text-green-600 font-bold">✓</span>
-                <span className="text-sm" style={{ color: '#1a202c' }}>At least 6 characters long</span>
+                <span className="text-sm" style={{ color: '#1a202c' }}>At least 8 characters long</span>
               </li>
               <li className="flex items-start space-x-2">
-                <span className="text-blue-600 font-bold">💡</span>
-                <span className="text-sm" style={{ color: '#1a202c' }}>Use a mix of letters, numbers, and symbols</span>
+                <span className="text-green-600 font-bold">✓</span>
+                <span className="text-sm" style={{ color: '#1a202c' }}>At least one uppercase letter (A-Z)</span>
               </li>
               <li className="flex items-start space-x-2">
-                <span className="text-blue-600 font-bold">💡</span>
-                <span className="text-sm" style={{ color: '#1a202c' }}>Avoid common passwords</span>
+                <span className="text-green-600 font-bold">✓</span>
+                <span className="text-sm" style={{ color: '#1a202c' }}>At least one lowercase letter (a-z)</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <span className="text-green-600 font-bold">✓</span>
+                <span className="text-sm" style={{ color: '#1a202c' }}>At least one number (0-9)</span>
+              </li>
+              <li className="flex items-start space-x-2">
+                <span className="text-green-600 font-bold">✓</span>
+                <span className="text-sm" style={{ color: '#1a202c' }}>At least one special character (!@#$%^&*)</span>
               </li>
             </ul>
           </div>

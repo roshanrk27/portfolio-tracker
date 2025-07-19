@@ -3,6 +3,8 @@
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import ShareButton from './ShareButton'
 
 export default function Navbar() {
   const [user, setUser] = useState<{ email?: string } | null>(null)
@@ -37,30 +39,33 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="shadow-sm border-b" style={{ background: 'radial-gradient(circle at 70% 30%, #e0f3ff 0%, #CEEBFB 70%, #fff 100%)' }}>
+    <nav className="shadow-sm border-b bg-gradient-to-r from-blue-400 to-indigo-500">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <h1 className="font-semibold text-base sm:text-lg md:text-xl lg:text-2xl" style={{ color: '#222' }}>
+            <h1 className="font-semibold text-base sm:text-lg md:text-xl lg:text-2xl text-white">
               Investment Goals Tracker
             </h1>
           </div>
           
           <div className="flex items-center space-x-6 ml-auto">
             {user && (
-              <span className="text-sm" style={{ color: '#222' }}>
+              <span className="text-sm text-white">
                 {user.email}
               </span>
             )}
+            
+            {/* Share Button */}
+            <ShareButton />
             
             {/* Help Menu */}
             <div className="relative">
               <button
                 onClick={() => setShowHelpMenu(!showHelpMenu)}
-                className="p-2 hover:bg-black/5 rounded-md transition-colors"
+                className="p-2 hover:bg-white/10 rounded-md transition-colors"
                 title="Help"
               >
-                <svg className="w-5 h-5" fill="none" stroke="#222" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="white" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </button>
@@ -73,6 +78,13 @@ export default function Navbar() {
                   >
                     Show Onboarding
                   </button>
+                  <Link
+                    href="/dashboard/change-password"
+                    onClick={() => setShowHelpMenu(false)}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    Change Password
+                  </Link>
                 </div>
               )}
             </div>
@@ -83,16 +95,16 @@ export default function Navbar() {
               className={`p-2 rounded-md transition-colors ${
                 isLoggingOut 
                   ? 'opacity-50 cursor-not-allowed' 
-                  : 'hover:bg-black/5'
+                  : 'hover:bg-white/10'
               }`}
               title={isLoggingOut ? "Logging out..." : "Logout"}
             >
               {isLoggingOut ? (
-                <svg className="w-5 h-5 animate-spin" fill="none" stroke="#222" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 animate-spin" fill="none" stroke="white" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               ) : (
-                <svg className="w-5 h-5" fill="none" stroke="#222" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="white" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
               )}
