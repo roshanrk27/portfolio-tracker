@@ -9,11 +9,9 @@ export default function Sidebar() {
   const [pendingRoute, setPendingRoute] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
 
-  // Collapse sidebar by default on mobile
+  // Collapse sidebar by default on all screen sizes
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 640) {
-      setCollapsed(true)
-    }
+    setCollapsed(true)
   }, [])
 
   const navItems = [

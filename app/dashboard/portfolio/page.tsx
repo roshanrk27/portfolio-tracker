@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { getCurrentPortfolio, getPortfolioSummaryOptimized, getLatestNavDate, getSchemeXIRRs, getPortfolioXIRR } from '@/lib/portfolioUtils'
 import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import { useQuery } from '@tanstack/react-query'
+import { categorizeScheme } from '@/lib/assetAllocation'
 
 interface PortfolioHolding {
   id: string
@@ -270,7 +271,7 @@ export default function PortfolioDashboard() {
         </div>
 
         {/* Portfolio Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {/* Total Holdings Card */}
           {summaryLoading ? (
             <SummaryCardSkeleton />
@@ -330,6 +331,80 @@ export default function PortfolioDashboard() {
                   )}
                 </div>
               </div>
+            </div>
+          ) : null}
+
+          {/* Asset Allocation Card */}
+          {portfolioLoading ? (
+            <SummaryCardSkeleton />
+          ) : portfolio.length > 0 ? (
+            <div className="bg-white rounded-lg shadow p-6 border-l-4 border-indigo-500">
+              <div className="flex items-center mb-3">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Asset Allocation</p>
+                </div>
+              </div>
+              {(() => {
+                // Calculate allocation data
+                const allocationMap: Record<string, number> = {}
+                portfolio.forEach(holding => {
+                  const category = categorizeScheme(holding.scheme_name).category
+                  allocationMap[category] = (allocationMap[category] || 0) + holding.current_value
+                })
+                const totalValue = Object.values(allocationMap).reduce((sum, v) => sum + v, 0)
+                
+                // Sort categories by value descending
+                const sortedCategories = Object.entries(allocationMap)
+                  .sort(([,a], [,b]) => b - a)
+                
+                return (
+                  <div className="space-y-3">
+                    {/* Single stacked bar chart */}
+                    <div className="flex bg-gray-200 rounded-full h-4 overflow-hidden">
+                      {sortedCategories.map(([category, value]) => {
+                        const percentage = totalValue > 0 ? (value / totalValue) * 100 : 0
+                        const color = categorizeScheme(category).color
+                        return (
+                          <div
+                            key={category}
+                            className="h-full transition-all duration-300"
+                            style={{ 
+                              width: `${percentage}%`,
+                              backgroundColor: color
+                            }}
+                            title={`${category}: ${percentage.toFixed(1)}%`}
+                          />
+                        )
+                      })}
+                    </div>
+                    
+                    {/* Legend */}
+                    <div className="flex flex-wrap gap-3">
+                      {sortedCategories.map(([category, value]) => {
+                        const percentage = totalValue > 0 ? (value / totalValue) * 100 : 0
+                        const color = categorizeScheme(category).color
+                        return (
+                          <div key={category} className="flex items-center">
+                            <div 
+                              className="w-3 h-3 rounded-full mr-1"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-xs text-gray-700">{category}</span>
+                            <span className="text-xs font-medium text-gray-900 ml-1">
+                              {percentage.toFixed(0)}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           ) : null}
         </div>
@@ -397,15 +472,27 @@ export default function PortfolioDashboard() {
                     return (
                       <tr key={holding.id} className={`hover:bg-gray-100 ${rowColor}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
-                            {(holding.folio || holding.isin) && (
-                              <div className="text-xs mt-1">
-                                {holding.folio && <span className="text-indigo-600">Folio: {holding.folio}</span>}
-                                {holding.folio && holding.isin && <span className="text-gray-400"> | </span>}
-                                {holding.isin && <span className="text-gray-500">ISIN: {holding.isin}</span>}
-                              </div>
-                            )}
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
+                              {(holding.folio || holding.isin) && (
+                                <div className="text-xs mt-1">
+                                  {holding.folio && <span className="text-indigo-600">Folio: {holding.folio}</span>}
+                                  {holding.folio && holding.isin && <span className="text-gray-400"> | </span>}
+                                  {holding.isin && <span className="text-gray-500">ISIN: {holding.isin}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <span 
+                              className="text-xs px-2 py-1 rounded-full font-medium"
+                              style={{ 
+                                backgroundColor: `${categorizeScheme(holding.scheme_name).color}20`,
+                                color: categorizeScheme(holding.scheme_name).color,
+                                border: `1px solid ${categorizeScheme(holding.scheme_name).color}40`
+                              }}
+                            >
+                              {categorizeScheme(holding.scheme_name).category}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -444,15 +531,27 @@ export default function PortfolioDashboard() {
                     return (
                       <tr key={holding.id} className={`hover:bg-gray-100 ${rowColor}`}>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
-                            {(holding.folio || holding.isin) && (
-                              <div className="text-xs mt-1">
-                                {holding.folio && <span className="text-indigo-600">Folio: {holding.folio}</span>}
-                                {holding.folio && holding.isin && <span className="text-gray-400"> | </span>}
-                                {holding.isin && <span className="text-gray-500">ISIN: {holding.isin}</span>}
-                              </div>
-                            )}
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{holding.scheme_name}</div>
+                              {(holding.folio || holding.isin) && (
+                                <div className="text-xs mt-1">
+                                  {holding.folio && <span className="text-indigo-600">Folio: {holding.folio}</span>}
+                                  {holding.folio && holding.isin && <span className="text-gray-400"> | </span>}
+                                  {holding.isin && <span className="text-gray-500">ISIN: {holding.isin}</span>}
+                                </div>
+                              )}
+                            </div>
+                            <span 
+                              className="text-xs px-2 py-1 rounded-full font-medium"
+                              style={{ 
+                                backgroundColor: `${categorizeScheme(holding.scheme_name).color}20`,
+                                color: categorizeScheme(holding.scheme_name).color,
+                                border: `1px solid ${categorizeScheme(holding.scheme_name).color}40`
+                              }}
+                            >
+                              {categorizeScheme(holding.scheme_name).category}
+                            </span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

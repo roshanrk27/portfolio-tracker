@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { formatIndianNumberWithSuffix } from '@/lib/goalSimulator'
 import { getGoalMappings, getGoalXIRR } from '@/lib/portfolioUtils'
 import { calculateSchemeXIRR, formatXIRR } from '@/lib/xirr'
+import { categorizeScheme } from '@/lib/assetAllocation'
 
 import AssetAllocationBar from './AssetAllocationBar'
 import { useQuery } from '@tanstack/react-query'
@@ -439,11 +440,7 @@ export default function GoalDetailsModal({ goal, xirrData, onClose }: GoalDetail
                 const mfAlloc = schemeDetails.map(s => ({
                   type: s.scheme_name,
                   value: s.current_value,
-                  category: (() => {
-                    const name = (s.scheme_name || '').toLowerCase();
-                    if (name.includes('debt') || name.includes('liquid') || name.includes('income') || name.includes('gilt') || name.includes('bond')) return 'Debt';
-                    return 'Equity';
-                  })()
+                  category: categorizeScheme(s.scheme_name).category
                 }))
                 const stockAlloc = stockRows.map(stock => {
                   const price = stockPrices[stock.stock_code]
@@ -473,8 +470,9 @@ export default function GoalDetailsModal({ goal, xirrData, onClose }: GoalDetail
                 }
                 const totalValue = Object.values(allocationMap).reduce((sum, v) => sum + v, 0);
                 const colorMap: Record<string, string> = {
-                  Equity: '#a5b4fc',
-                  Debt: '#bbf7d0',
+                  Equity: '#3b82f6',
+                  Debt: '#10b981',
+                  Hybrid: '#f59e0b',
                   Other: '#f3e8ff',
                 };
                 const allocationData = Object.entries(allocationMap).map(([category, value]) => ({
@@ -533,21 +531,21 @@ export default function GoalDetailsModal({ goal, xirrData, onClose }: GoalDetail
                   {schemeDetails.map((scheme) => (
                     <tr key={scheme.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm text-gray-900">
-                        {scheme.scheme_name} {' '}
-                        <span className="italic text-xs text-gray-500 font-normal">[
-                          {(() => {
-                            const name = (scheme.scheme_name || '').toLowerCase();
-                            let assetType = 'Equity';
-                            if (
-                              name.includes('debt') ||
-                              name.includes('liquid') ||
-                              name.includes('income') ||
-                              name.includes('gilt') ||
-                              name.includes('bond')
-                            ) assetType = 'Debt';
-                            return assetType;
-                          })()}
-                        ]</span>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{scheme.scheme_name}</div>
+                          </div>
+                          <span 
+                            className="text-xs px-2 py-1 rounded-full font-medium"
+                            style={{ 
+                              backgroundColor: `${categorizeScheme(scheme.scheme_name).color}20`,
+                              color: categorizeScheme(scheme.scheme_name).color,
+                              border: `1px solid ${categorizeScheme(scheme.scheme_name).color}40`
+                            }}
+                          >
+                            {categorizeScheme(scheme.scheme_name).category}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{scheme.folio || '-'}</td>
                       <td className="px-6 py-4 text-sm text-gray-900 text-right">{formatNumber(scheme.balance_units)}</td>

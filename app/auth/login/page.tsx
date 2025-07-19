@@ -124,6 +124,11 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  <div className="mt-2 text-right">
+                    <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                      Forgot your password?
+                    </Link>
+                  </div>
                 </div>
               </div>
 
@@ -141,8 +146,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-700 disabled:opacity-50 transition-all duration-200 hover:scale-105"
-                  style={{ background: '#66A7C5', color: '#fff' }}
+                  className="w-full font-semibold py-2 px-4 rounded bg-blue-600 hover:bg-blue-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
                 >
                   {loading ? 'Signing in...' : 'Sign in'}
                 </button>
@@ -152,6 +156,19 @@ export default function LoginPage() {
                 <Link href="/auth/signup" className="hover:underline" style={{ color: '#222' }}>
                   Don&apos;t have an account? Sign up
                 </Link>
+              </div>
+
+              {/* Legal Links */}
+              <div className="text-center pt-4 border-t border-gray-200">
+                <div className="flex justify-center items-center space-x-4 text-xs text-gray-500">
+                  <Link href="/terms" className="hover:text-gray-700 hover:underline">
+                    Terms of Service
+                  </Link>
+                  <span>•</span>
+                  <Link href="/privacy" className="hover:text-gray-700 hover:underline">
+                    Privacy Policy
+                  </Link>
+                </div>
               </div>
             </form>
           </div>

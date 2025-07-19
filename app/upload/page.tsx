@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { parseUploadedFile } from './parse'
 import { fileUploadSchema } from '@/lib/validation'
 import { useRouter } from 'next/navigation'
+import Navbar from '@/components/Navbar'
+import Sidebar from '@/components/Sidebar'
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -180,14 +182,29 @@ export default function UploadPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto p-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Upload CAMS Statement</h1>
-          <p className="text-gray-600">Upload your mutual fund transaction statement to track your portfolio</p>
-        </div>
+      <Navbar />
+      <div className="flex">
+        <Sidebar />
+        <div className="flex-1 p-6">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-4">
+              <button
+                onClick={() => router.back()}
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                aria-label="Go back to previous page"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">Upload CAMS Statement</h1>
+            <p className="text-gray-600">Upload your mutual fund transaction statement to track your portfolio</p>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Upload Form */}
           <div>
             <form className="bg-white rounded-lg shadow-md p-8" onSubmit={e => { e.preventDefault(); handleUpload(); }}>
@@ -365,6 +382,7 @@ export default function UploadPage() {
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
