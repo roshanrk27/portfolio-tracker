@@ -93,9 +93,9 @@ export const fileUploadSchema = z.object({
     .refine((file) => file.size > 0, 'File cannot be empty')
     .refine((file) => file.size <= 10 * 1024 * 1024, 'File size must be less than 10MB')
     .refine((file) => {
-      const allowedTypes = ['text/csv', 'application/csv']
-      return allowedTypes.includes(file.type) || file.name.toLowerCase().endsWith('.csv')
-    }, 'File must be a CSV file')
+      const allowedTypes = ['text/csv', 'application/csv', 'application/pdf']
+      return allowedTypes.includes(file.type) || file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.pdf')
+    }, 'File must be a CSV or PDF file')
 })
 
 export type FileUploadData = z.infer<typeof fileUploadSchema>

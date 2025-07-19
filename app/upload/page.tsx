@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [password, setPassword] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState('')
   const [parsingStatus, setParsingStatus] = useState('')
@@ -55,6 +56,7 @@ export default function UploadPage() {
     setUploadStatus('')
     setParsingStatus('')
     setPortfolioStatus('')
+    setPassword('') // reset password on new file
     
     if (file) {
       try {
@@ -134,7 +136,9 @@ export default function UploadPage() {
       
       // Parse the uploaded file
       setParsingStatus('Parsing transactions...')
-      const parseResult = await parseUploadedFile(uploadData.id)
+      // Pass password only for PDFs
+      const isPDF = selectedFile.name.toLowerCase().endsWith('.pdf')
+      const parseResult = await parseUploadedFile(uploadData.id, isPDF ? password : undefined)
       
       if (parseResult.success) {
         setParsingStatus(`Parsed ${parseResult.count} transactions successfully!`)
@@ -189,20 +193,36 @@ export default function UploadPage() {
             <form className="bg-white rounded-lg shadow-md p-8" onSubmit={e => { e.preventDefault(); handleUpload(); }}>
               <div className="mb-6">
                 <label htmlFor="cams-file" className="block text-sm font-semibold text-gray-700 mb-3">
-                  Select CAMS CSV File
+                  Select CAMS CAS PDF File
                 </label>
                 <input
                   id="cams-file"
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.pdf"
                   onChange={handleFileSelect}
-                  aria-label="Select CAMS CSV file"
+                  aria-label="Select CAMS CSV or PDF file"
                   className={`block w-full text-sm text-gray-700 file:mr-4 file:py-3 file:px-6 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-colors border rounded-lg focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${fileError ? 'border-red-500' : 'border-gray-200'}`}
                 />
                 {fileError && (
                   <p className="mt-2 text-sm text-red-600">{fileError}</p>
                 )}
               </div>
+              {selectedFile && selectedFile.name.toLowerCase().endsWith('.pdf') && (
+                <div className="mb-6">
+                  <label htmlFor="pdf-password" className="block text-sm font-semibold text-gray-700 mb-3">
+                    PDF Password (if protected)
+                  </label>
+                  <input
+                    id="pdf-password"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter PDF password"
+                    className="block w-full text-sm text-gray-700 border rounded-lg py-3 px-4 focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                    autoComplete="off"
+                  />
+                </div>
+              )}
 
               {/* Transaction Date Range */}
               <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -289,8 +309,9 @@ export default function UploadPage() {
               <div className="mt-8 p-5 bg-gray-50 rounded-xl border border-gray-200">
                 <h3 className="font-semibold text-gray-900 mb-3">Instructions:</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                  <li>Upload your CAMS Consolidated MF Transaction Statement in CSV format</li>
-                  <li>Make sure the file contains transaction data with scheme names, amounts, and dates</li>
+                  <li>Upload your CAMS Consolidate Account Statement (CAS) PDF File.</li>
+                  <li>You can get this file from <a href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement</a></li>
+                  <li>Select the Detailed statement option, choose the time period and select &quot;Transacted folios and folio with balance&quot;. Uploading the incorrect statement type might lead to inaccurate results</li>
                   <li>File will be processed to extract your mutual fund transactions</li>
                   <li>Portfolio values will be automatically updated with latest NAV data</li>
                   <li>Maximum file size: 10MB</li>
@@ -309,7 +330,7 @@ export default function UploadPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-gray-900">File Upload</h3>
-                  <p className="text-sm text-gray-600">Your CSV file is securely uploaded and stored</p>
+                  <p className="text-sm text-gray-600">Your PDF file is securely uploaded and stored</p>
                 </div>
               </div>
               

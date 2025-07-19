@@ -9,7 +9,15 @@ const supabaseServer = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function parseUploadedFile(uploadId: string) {
+function getFileType(fileName: string): 'csv' | 'pdf' | 'unknown' {
+  if (!fileName || typeof fileName !== 'string') return 'unknown';
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.csv')) return 'csv';
+  if (lower.endsWith('.pdf')) return 'pdf';
+  return 'unknown';
+}
+
+export async function parseUploadedFile(uploadId: string, password?: string) {
   console.log('Starting parse for upload ID:', uploadId)
   
   try {
@@ -31,6 +39,10 @@ export async function parseUploadedFile(uploadId: string) {
 
     console.log('Found upload:', upload.storage_path)
 
+    // Detect file type
+    const fileType = getFileType(upload.file_name);
+    console.log('Detected file type:', fileType);
+
     // Download file from storage
     const { data: fileData, error: downloadError } = await supabaseServer.storage
       .from('uploads')
@@ -47,78 +59,161 @@ export async function parseUploadedFile(uploadId: string) {
 
     console.log('File downloaded, size:', fileData.size)
 
-    // Convert file to text
-    const fileText = await fileData.text()
-    console.log('File text length:', fileText.length)
-    console.log('First 200 chars:', fileText.substring(0, 200))
-    
-    // Parse CSV content
-    const transactions = parseCAMSCSV(fileText)
-    console.log('Parsed transactions:', transactions.length)
+    if (fileType === 'csv') {
+      // Convert file to text
+      const fileText = await fileData.text()
+      console.log('File text length:', fileText.length)
+      console.log('First 200 chars:', fileText.substring(0, 200))
+      // Parse CSV content
+      const transactions = parseCAMSCSV(fileText)
+      console.log('Parsed transactions:', transactions.length)
 
-    // Store transactions in database
-    if (transactions.length > 0) {
-      const transactionsToInsert = transactions.map(t => ({
-        user_id: upload.user_id,
-        date: t.date,
-        scheme_name: t.scheme,
-        folio: t.folio_number,
-        isin: t.isin,
-        amount: t.amount,
-        transaction_type: t.type,
-        price: t.nav,
-        units: t.units,
-        unit_balance: t.unit_balance
-      }))
+      // Store transactions in database
+      if (transactions.length > 0) {
+        const transactionsToInsert = transactions.map(t => ({
+          user_id: upload.user_id,
+          date: t.date,
+          scheme_name: t.scheme,
+          folio: t.folio_number,
+          isin: t.isin,
+          amount: t.amount,
+          transaction_type: t.type,
+          price: t.nav,
+          units: t.units,
+          unit_balance: t.unit_balance
+        }))
 
-      const { error: insertError } = await supabaseServer
-        .from('transactions')
-        .insert(transactionsToInsert)
+        const { error: insertError } = await supabaseServer
+          .from('transactions')
+          .insert(transactionsToInsert)
 
-      if (insertError) {
-        console.error('Transaction insert error:', insertError)
-        throw new Error(`Failed to store transactions: ${insertError.message}`)
+        if (insertError) {
+          console.error('Transaction insert error:', insertError)
+          throw new Error(`Failed to store transactions: ${insertError.message}`)
+        }
+
+        console.log('Stored', transactions.length, 'transactions in database')
       }
 
-      console.log('Stored', transactions.length, 'transactions in database')
-    }
+      // Update upload status
+      const { error: updateError } = await supabaseServer
+        .from('uploads')
+        .update({ status: 'parsed' })
+        .eq('id', uploadId)
 
-    // Update upload status
-    const { error: updateError } = await supabaseServer
-      .from('uploads')
-      .update({ status: 'parsed' })
-      .eq('id', uploadId)
-
-    if (updateError) {
-      console.error('Status update error:', updateError)
-    }
-
-    // Refresh portfolio for the user
-    let portfolioRefreshed = false
-    let portfolioError = null
-    
-    try {
-      console.log('Starting portfolio refresh for user:', upload.user_id)
-      const refreshResult = await refreshPortfolioNav(upload.user_id)
-      
-      if (refreshResult.success) {
-        console.log('Successfully refreshed portfolio:', refreshResult.updated, 'entries updated')
-        portfolioRefreshed = true
-      } else {
-        console.error('Portfolio refresh failed:', refreshResult.error)
-        portfolioError = refreshResult.error
+      if (updateError) {
+        console.error('Status update error:', updateError)
       }
-    } catch (error) {
-      console.error('Error during portfolio refresh:', error)
-      portfolioError = error instanceof Error ? error.message : 'Unknown error'
-    }
 
-    return { 
-      success: true, 
-      transactions, 
-      count: transactions.length,
-      portfolioRefreshed,
-      portfolioError
+      // Refresh portfolio for the user
+      let portfolioRefreshed = false
+      let portfolioError = null
+      try {
+        console.log('Starting portfolio refresh for user:', upload.user_id)
+        const refreshResult = await refreshPortfolioNav(upload.user_id)
+        if (refreshResult.success) {
+          console.log('Successfully refreshed portfolio:', refreshResult.updated, 'entries updated')
+          portfolioRefreshed = true
+        } else {
+          console.error('Portfolio refresh failed:', refreshResult.error)
+          portfolioError = refreshResult.error
+        }
+      } catch (error) {
+        console.error('Error during portfolio refresh:', error)
+        portfolioError = error instanceof Error ? error.message : 'Unknown error'
+      }
+
+      return {
+        success: true,
+        transactions,
+        count: transactions.length,
+        portfolioRefreshed,
+        portfolioError
+      }
+    } else if (fileType === 'pdf') {
+      // PDF flow: send to microservice and insert transactions
+      const MICROSERVICE_URL = process.env.PDF_MICROSERVICE_URL || 'https://cams2csv-api.onrender.com/parse';
+      const formData = new FormData();
+      formData.append('file', fileData);
+      if (password) {
+        formData.append('password', password);
+      }
+      let microserviceResult;
+      try {
+        const res = await fetch(MICROSERVICE_URL, {
+          method: 'POST',
+          body: formData,
+        });
+        microserviceResult = await res.json();
+      } catch {
+        throw new Error('Failed to call PDF parsing microservice');
+      }
+      if (!microserviceResult || !Array.isArray(microserviceResult.data)) {
+        throw new Error('PDF microservice did not return valid transactions');
+      }
+      const transactions = microserviceResult.data;
+      // Normalize and insert into DB
+      if (transactions.length > 0) {
+        const transactionsToInsert = transactions.map((t: Record<string, unknown>) => {
+          console.log('Transaction:', t);
+          return {
+            user_id: upload.user_id,
+            date: t.Date,
+          scheme_name: t.Fund_name || t.scheme || '',
+          folio: t.Folio,
+          isin: t.ISIN,
+          amount: t.Amount,
+          transaction_type: t.Description || t.transaction_type,
+                      price: t.Price || t.nav,
+            units: t.Units,
+            unit_balance: t.Unit_balance,
+          };
+        });
+        const { error: insertError } = await supabaseServer
+          .from('transactions')
+          .insert(transactionsToInsert);
+        if (insertError) {
+          console.error('Transaction insert error:', insertError)
+          throw new Error(`Failed to store transactions: ${insertError.message}`)
+        }
+        console.log('Stored', transactions.length, 'transactions in database (PDF flow)')
+      }
+      // Update upload status
+      const { error: updateError } = await supabaseServer
+        .from('uploads')
+        .update({ status: 'parsed' })
+        .eq('id', uploadId)
+      if (updateError) {
+        console.error('Status update error:', updateError)
+      }
+      // Refresh portfolio for the user
+      let portfolioRefreshed = false
+      let portfolioError = null
+      try {
+        console.log('Starting portfolio refresh for user:', upload.user_id)
+        const refreshResult = await refreshPortfolioNav(upload.user_id)
+        if (refreshResult.success) {
+          console.log('Successfully refreshed portfolio:', refreshResult.updated, 'entries updated')
+          portfolioRefreshed = true
+        } else {
+          console.error('Portfolio refresh failed:', refreshResult.error)
+          portfolioError = refreshResult.error
+        }
+      } catch (error) {
+        console.error('Error during portfolio refresh:', error)
+        portfolioError = error instanceof Error ? error.message : 'Unknown error'
+      }
+
+      return {
+        success: true,
+        transactions,
+        count: transactions.length,
+        portfolioRefreshed,
+        portfolioError,
+        microserviceRaw: microserviceResult
+      };
+    } else {
+      throw new Error('Unsupported file type for parsing. Only CSV and PDF are currently supported.');
     }
 
   } catch (error: unknown) {
