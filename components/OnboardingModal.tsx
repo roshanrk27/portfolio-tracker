@@ -93,7 +93,7 @@ export default function OnboardingModal({ onClose }: OnboardingModalProps) {
               <div>
                 <span className="font-medium text-gray-900">1. Upload your Mutual Fund data</span>
                 <p className="text-sm text-gray-600 mt-1">
-                  Go to the Upload section and upload your CAMS CAS CSV file to automatically extract all your transactions.
+                  Go to the Upload section and upload your CAMS CAS PDF file to automatically extract all your transactions.
                 </p>
               </div>
 

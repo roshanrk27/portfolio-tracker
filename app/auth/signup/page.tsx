@@ -11,6 +11,8 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [isClient, setIsClient] = useState(false)
+  const [is18, setIs18] = useState(false)
+  const [agreesToTerms, setAgreesToTerms] = useState(false)
 
   useEffect(() => {
     setIsClient(true)
@@ -19,17 +21,18 @@ export default function SignupPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!supabase) return
-    
+    if (!is18 || !agreesToTerms) {
+      setError('You must confirm you are 18 or older and agree to the Terms of Service and Privacy Policy.')
+      return
+    }
     setLoading(true)
     setError('')
     setMessage('')
-
     try {
       const { error } = await supabase.auth.signUp({
         email,
         password,
       })
-
       if (error) {
         setError(error.message)
       } else {
@@ -86,10 +89,41 @@ export default function SignupPage() {
             <div className="text-green-600 text-sm text-center">{message}</div>
           )}
 
-          <div>
+          <div className="space-y-3">
+            <div className="flex items-start">
+              <input
+                id="is18"
+                name="is18"
+                type="checkbox"
+                checked={is18}
+                onChange={e => setIs18(e.target.checked)}
+                className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-1"
+                required
+              />
+              <label htmlFor="is18" className="ml-2 block text-sm text-gray-700">
+                I am 18 years of age or older.
+              </label>
+            </div>
+            <div className="flex items-start">
+              <input
+                id="agreesToTerms"
+                name="agreesToTerms"
+                type="checkbox"
+                checked={agreesToTerms}
+                onChange={e => setAgreesToTerms(e.target.checked)}
+                className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mt-1"
+                required
+              />
+              <label htmlFor="agreesToTerms" className="ml-2 block text-sm text-gray-700">
+                I agree to the{' '}
+                <Link href="/terms" target="_blank" className="text-blue-700 underline hover:text-blue-900">Terms of Service</Link>
+                {' '}and{' '}
+                <Link href="/privacy" target="_blank" className="text-blue-700 underline hover:text-blue-900">Privacy Policy</Link>.
+              </label>
+            </div>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !is18 || !agreesToTerms}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
             >
               {loading ? 'Creating account...' : 'Sign up'}
