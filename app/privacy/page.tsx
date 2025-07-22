@@ -87,7 +87,7 @@ export default function PrivacyPage() {
 
   <h2 className="mt-8 text-blue-700 font-bold text-2xl">10. Contact</h2>
   <p>If you have questions or concerns, contact:</p>
-  <p><strong>Email:</strong> roshan@sipgoals.in</p>
+  <p><strong>Email:</strong> roshan at sipgoals.in</p>
           </div>
         </div>
       </div>

@@ -99,7 +99,7 @@ export default function TermsPage() {
 
             <h2 className="mt-8 text-blue-700 font-bold text-2xl">12. Contact Us</h2>
             <p>For any questions, support requests, or legal notices, contact us at:</p>
-            <p><strong>Email:</strong> roshan@sipgoals.in</p>
+            <p><strong>Email:</strong> roshan at sipgoals.in</p>
           </div>
         </div>
       </div>
