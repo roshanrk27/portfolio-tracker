@@ -2,10 +2,10 @@ name: Scheduled NAV Refresh
 
 on:
   schedule:
-    # Runs at 3:00 AM UTC/8.30 AM IST Monday-Friday
-    - cron: '0 3 * * 1-5'
-    # Runs at 6:00 PM UTC/11.30PM IST Monday, Wednesday (for NPS)
-    - cron: '0 18 * * 1,3'
+    # Runs at 3:00 AM UTC/8.30 AM IST Monday-Saturday
+    - cron: '0 3 * * 1-6'
+    # Runs at 6:00 PM UTC/11.30PM IST Monday, Wednesday, Saturday (for NPS)
+    - cron: '0 18 * * 1,3,6'
   workflow_dispatch:        # allows manual triggering
 
 
