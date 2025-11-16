@@ -23,6 +23,41 @@ curl -H "X-AI-Coach-API-Key: YOUR_API_KEY" \
 
 ---
 
+## Environment Variables
+
+In addition to the API key above, the AI Coach module reads several environment variables. Set these in `.env.local` for development and in your hosting provider for production.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | ✔︎ | — | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✔︎ | — | Supabase anonymous key used client-side |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✔︎ | — | Supabase service role key used server-side |
+| `NAV_REFRESH_API_KEY` | ✔︎ | — | Shared secret for automated NAV refresh |
+| `PERPLEXITY_API_KEY` | Optional | — | API key for calling Perplexity (required when enabling fund facts) |
+| `FUND_FACTS_USE_LLM` | Optional | `false` | Toggle Perplexity-backed fund facts (`true` / `false`) |
+| `FUND_FACTS_MIN_CONFIDENCE` | Optional | `medium` | Minimum LLM confidence accepted (`high` or `medium`) |
+| `FUND_FACTS_TTL_DAYS` | Optional | `30` | Cache freshness window for fund facts (positive integer days) |
+| `FUND_FACTS_MAX_DAILY_CALLS` | Optional | `100` | Maximum Perplexity API calls per day (positive integer) |
+| `FUND_FACTS_MAX_BATCH_SIZE` | Optional | `10` | Maximum number of funds per batch request (positive integer) |
+
+**Example `.env.local`:**
+
+```
+AI_COACH_API_KEY=your_api_key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+NAV_REFRESH_API_KEY=your_nav_refresh_key
+PERPLEXITY_API_KEY=your_perplexity_key
+FUND_FACTS_USE_LLM=false
+FUND_FACTS_MIN_CONFIDENCE=medium
+FUND_FACTS_TTL_DAYS=30
+FUND_FACTS_MAX_DAILY_CALLS=100
+FUND_FACTS_MAX_BATCH_SIZE=10
+```
+
+---
+
 ## Endpoints
 
 ### 1. Get User Goals

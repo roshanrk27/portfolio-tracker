@@ -10,6 +10,68 @@ export interface LLMMetadata {
   dataFreshness: 'real-time' | 'cached' | 'stale'
 }
 
+export type FundFactsConfidence = 'high' | 'medium' | 'low'
+
+export interface FundFactsLLM {
+  fund_ident: {
+    query_name: string
+    amfi_code: string | null
+    isin: string | null
+    scheme_name_official: string | null
+    plan: 'Direct' | 'Regular' | null
+    option: 'Growth' | 'IDCW' | null
+  }
+  facts: {
+    category: string | null
+    benchmark: string | null
+    expense_ratio_pct: number | null
+    aum_cr: number | null
+  }
+  performance: {
+    as_of: string | null
+    cagr_1y: number | null
+    cagr_3y: number | null
+    cagr_5y: number | null
+    ret_ytd: number | null
+    ret_1m: number | null
+    ret_3m: number | null
+    ret_6m: number | null
+  }
+  risk_metrics: {
+    period: '3Y' | '5Y' | '1Y' | null
+    as_of: string | null
+    alpha: number | null
+    beta: number | null
+    sharpe_ratio: number | null
+    sortino_ratio: number | null
+    stddev_pct: number | null
+    r_squared: number | null
+    information_ratio: number | null
+    source: string | null
+  }
+  sources: Array<{
+    field: string
+    url: string
+    as_of: string | null
+  }>
+  confidence: FundFactsConfidence
+  notes: string | null
+}
+
+export interface FundFactsPromptFund {
+  scheme_name: string
+  fund_id: string | null
+  isin: string | null
+  latest_nav: number | null
+  current_value: number | null
+}
+
+export interface FundFactsPromptContext {
+  goal_name?: string
+  goal_description?: string | null
+  funds: FundFactsPromptFund[]
+}
+
 export interface APIResponse<T> {
   success: boolean
   data?: T
@@ -232,5 +294,37 @@ export interface SimulationResponse {
   }
   comparison_summary?: string
   _action_items?: string[]
+}
+
+// Fund facts response
+export interface FundFactsResponse {
+  fund_id: string
+  scheme_name: string | null
+  risk_return: {
+    cagr_1y?: number | null
+    cagr_3y?: number | null
+    cagr_5y?: number | null
+    ret_ytd?: number | null
+    ret_1m?: number | null
+    ret_3m?: number | null
+    ret_6m?: number | null
+    vol_3y_ann?: number | null
+    max_dd_5y?: number | null
+  }
+  fees_aum: {
+    expense_ratio_pct?: number | null
+    aum_cr?: number | null
+  }
+  provenance: 'deterministic' | 'llm+cited'
+  llm_confidence?: FundFactsConfidence
+  llm_as_of?: string
+  sources?: Array<{
+    field: string
+    url: string
+    as_of: string | null
+  }>
+  notes?: {
+    llm?: string
+  }
 }
 
