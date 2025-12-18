@@ -33,11 +33,11 @@ In addition to the API key above, the AI Coach module reads several environment 
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✔︎ | — | Supabase anonymous key used client-side |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✔︎ | — | Supabase service role key used server-side |
 | `NAV_REFRESH_API_KEY` | ✔︎ | — | Shared secret for automated NAV refresh |
-| `PERPLEXITY_API_KEY` | Optional | — | API key for calling Perplexity (required when enabling fund facts) |
-| `FUND_FACTS_USE_LLM` | Optional | `false` | Toggle Perplexity-backed fund facts (`true` / `false`) |
+| `PERPLEXITY_API_KEY` | Optional | — | API key for the LLM provider that enriches fund facts (required when enabling fund facts) |
+| `FUND_FACTS_USE_LLM` | Optional | `false` | Toggle LLM-backed fund facts (`true` / `false`) |
 | `FUND_FACTS_MIN_CONFIDENCE` | Optional | `medium` | Minimum LLM confidence accepted (`high` or `medium`) |
 | `FUND_FACTS_TTL_DAYS` | Optional | `30` | Cache freshness window for fund facts (positive integer days) |
-| `FUND_FACTS_MAX_DAILY_CALLS` | Optional | `100` | Maximum Perplexity API calls per day (positive integer) |
+| `FUND_FACTS_MAX_DAILY_CALLS` | Optional | `100` | Maximum LLM fund-facts calls per day (positive integer) |
 | `FUND_FACTS_MAX_BATCH_SIZE` | Optional | `10` | Maximum number of funds per batch request (positive integer) |
 
 **Example `.env.local`:**
@@ -802,6 +802,109 @@ curl -X POST \
 
 ---
 
+### 9. Get Fund Facts
+
+**GET** `/funds/{fundId}/facts`
+
+Return LLM-enhanced fact sheets for a single mutual fund, including cited performance metrics, fee data, and provenance metadata. The endpoint always validates the API key and fund identifier before responding. If LLM augmentation is disabled (`FUND_FACTS_USE_LLM=false`) or low-confidence data is rejected, the response gracefully falls back to deterministic placeholders.
+
+**Path Parameters:**
+- `fundId` (string, required) - AMFI `scheme_code` (numeric string). Non-numeric IDs are rejected with `400`.
+
+**Sample Request:**
+```bash
+curl -H "X-AI-Coach-API-Key: YOUR_API_KEY" \
+  https://your-app/api/ai-coach/funds/118834/facts
+```
+
+**Sample Response (`provenance: "llm+cited"`):**
+```json
+{
+  "success": true,
+  "data": {
+    "fund_id": "118834",
+    "scheme_name": "Axis Bluechip Fund - Direct Growth",
+    "risk_return": {
+      "cagr_1y": 0.185,
+      "cagr_3y": 0.148,
+      "cagr_5y": 0.142,
+      "ret_ytd": 0.092,
+      "ret_1m": 0.012,
+      "ret_3m": 0.034,
+      "ret_6m": 0.068,
+      "vol_3y_ann": 0.135,
+      "max_dd_5y": null
+    },
+    "fees_aum": {
+      "expense_ratio_pct": 0.009,
+      "aum_cr": 41.2
+    },
+    "provenance": "llm+cited",
+    "llm_confidence": "high",
+    "llm_as_of": "2024-11-01",
+    "sources": [
+      {
+        "field": "performance.cagr_3y",
+        "url": "https://example.com/source/cagr-3y",
+        "as_of": "2024-11-01"
+      },
+      {
+        "field": "facts.expense_ratio_pct",
+        "url": "https://example.com/source/expense-ratio",
+        "as_of": "2024-10-31"
+      }
+    ],
+    "notes": {
+      "llm": "Sanitized for suitability; excludes distributor recommendations."
+    }
+  },
+  "_summary": "Fund facts for Axis Bluechip Fund - Direct Growth. Data provided with cited sources (confidence: high).",
+  "timestamp": "2024-11-02T10:30:00.000Z",
+  "_metadata": {
+    "currency": "INR",
+    "units": "Indian Rupees",
+    "timestamp": "2024-11-02T10:30:00.000Z",
+    "dataFreshness": "real-time"
+  }
+}
+```
+
+**Deterministic fallback example:**
+```json
+{
+  "success": true,
+  "data": {
+    "fund_id": "118834",
+    "scheme_name": "Axis Bluechip Fund - Direct Growth",
+    "risk_return": {},
+    "fees_aum": {},
+    "provenance": "deterministic",
+    "notes": {
+      "llm": "LLM data unavailable or rejected for quality; deterministic metrics not yet implemented."
+    }
+  },
+  "_summary": "Fund facts for Axis Bluechip Fund - Direct Growth. Data sourced from deterministic calculations only.",
+  "timestamp": "2024-11-02T10:30:00.000Z",
+  "_metadata": {
+    "currency": "INR",
+    "units": "Indian Rupees",
+    "timestamp": "2024-11-02T10:30:00.000Z",
+    "dataFreshness": "real-time"
+  }
+}
+```
+
+**Key Fields & Behaviors:**
+- `provenance` is either `llm+cited` (LLM data merged with deterministic fields) or `deterministic` (fallback with explanatory note).
+- `llm_confidence` and `llm_as_of` are returned only when LLM data passes guardrails and meets the configured `FUND_FACTS_MIN_CONFIDENCE`.
+- `sources` includes up to the top 3 citations from the LLM provider to keep payloads concise.
+- Performance metrics are expressed as decimals (e.g., `0.185` → 18.5% CAGR).
+- Responses include the header `X-Request-ID`, which you can log for traceability when debugging fund-facts workflows.
+- Fund facts are cached in Supabase (`fund_facts_llm`) for `FUND_FACTS_TTL_DAYS`; cached hits skip new LLM calls as long as confidence remains above the threshold.
+- The LLM daily budget (configured via `FUND_FACTS_MAX_DAILY_CALLS`) enforces a 429 error with a `rate_limit` object once the allowance is exhausted for the day.
+
+---
+
 ## Error Responses
 
 All errors follow a consistent format:
@@ -819,6 +922,8 @@ All errors follow a consistent format:
   - Example: Invalid UUID format, missing required fields, negative values
 - `401` - Unauthorized (invalid or missing API key)
   - Example: Missing `X-AI-Coach-API-Key` header or incorrect key
+- `429` - Rate limit exceeded (fund facts daily LLM budget reached)
+  - Example: Fund facts requests after `FUND_FACTS_MAX_DAILY_CALLS` is reached return a `rate_limit` payload with `type`, `retry_after`, `calls_today`, and `limit`
 - `404` - Not found (goal/user not found)
   - Example: Goal ID doesn't exist in database
 - `500` - Internal server error
@@ -828,8 +933,14 @@ All errors follow a consistent format:
 ```json
 {
   "success": false,
-  "error": "Invalid userId format",
-  "timestamp": "2024-11-02T10:30:00.000Z"
+  "error": "Daily fund-facts budget exceeded: 100/100 calls used today. Please try again later.",
+  "timestamp": "2024-11-02T10:30:00.000Z",
+  "rate_limit": {
+    "type": "budget_exceeded",
+    "retry_after": 86340,
+    "calls_today": 100,
+    "limit": 100
+  }
 }
 ```
 
@@ -1154,6 +1265,13 @@ All error responses:
 ### Date Formatting
 - Includes relative context
 - Examples: "Dec 2030 (5yr 3m away)", "02/11/2024"
+
+### Fund Facts Fields
+- `provenance`: `"llm+cited"` when enriched data passes guardrails or `"deterministic"` when only baseline data is available.
+- `llm_confidence`: `"high"` or `"medium"`; omitted for deterministic responses.
+- `llm_as_of`: ISO date describing the freshest performance/risk metrics surfaced to the LLM.
+- `sources`: Up to 3 cited URLs with `field`-level granularity and `as_of` dates so CrewAI agents can mention provenance.
+- `notes.llm`: Human-readable explanation for fallbacks (e.g., confidence too low, guardrail failure, LLM disabled).
 
 ---
 

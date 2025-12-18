@@ -20,6 +20,7 @@ export default function Sidebar() {
     { href: '/dashboard/stocks', label: 'Stocks', icon: '📈' },
     { href: '/dashboard/nps', label: 'NPS', icon: '🏛️' },
     { href: '/dashboard/goals/simulator', label: 'Goal Simulator', icon: '🎯' },
+    { href: '/articles', label: 'Articles', icon: '📚' }
   ]
 
   useEffect(() => {

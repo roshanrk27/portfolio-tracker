@@ -49,9 +49,15 @@ export default function Home() {
         </div>
         <div className="lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2">
           <div className="h-56 w-full bg-gradient-to-r from-blue-400 to-indigo-500 sm:h-72 md:h-96 lg:w-full lg:h-full flex items-center justify-center lg:rounded-l-3xl">
-            <div className="text-white text-center">
-              <h2 className="text-2xl font-bold mb-4">Investment Goal Tracking</h2>
-              <p className="text-lg opacity-90">Plan • Track • Achieve</p>
+            <div className="text-white text-center px-6">
+              <h2 className="text-2xl font-bold mb-2">Investment Goal Tracking</h2>
+              <p className="text-lg opacity-90 mb-4">Plan • Track • Achieve</p>
+              <Link
+                href="/articles"
+                className="inline-flex items-center justify-center px-5 py-2.5 border border-white text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-blue-50"
+              >
+                Learn about goal-based investing
+              </Link>
             </div>
           </div>
         </div>
