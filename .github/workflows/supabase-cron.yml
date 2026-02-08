@@ -2,7 +2,7 @@ name: Call Supabase Edge Function Every 30 Min
 
 on:
   schedule:
-    - cron: '*/30 4-21 * * 1-5'  # every 30 minutes in weekdays during India and US market hours
+    - cron: '30 23,11 * * 1-5'  # At 5AM and 5PM IST (23:30 and 11:30 UTC) every weekday
   workflow_dispatch:        # allows manual triggering
 
 jobs:
