@@ -24,19 +24,52 @@ function getYahooSymbol(stockCode: string, exchange: string): string {
   return stockCode + suffix
 }
 
-// Function to fetch USD to INR exchange rate using Yahoo Finance
+// Yahoo Finance often rate-limits (429) - use a browser User-Agent to reduce blocking
+const YAHOO_FETCH_OPTIONS: RequestInit = {
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  },
+}
+
+// Function to fetch USD to INR exchange rate - Yahoo Finance with ExchangeRate-API fallback
 async function fetchUSDToINR(): Promise<number | null> {
+  // Try Yahoo Finance first
   try {
-    const response = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/USDINR=X')
+    const response = await fetch(
+      'https://query1.finance.yahoo.com/v8/finance/chart/USDINR=X',
+      YAHOO_FETCH_OPTIONS
+    )
+    // Critical: check status before parsing - Yahoo returns "Too Many Requests" (429) as plain text
+    if (!response.ok) {
+      const text = await response.text()
+      console.warn(`Yahoo Finance USD-INR returned ${response.status}: ${text.slice(0, 80)}`)
+      throw new Error(`HTTP ${response.status}`)
+    }
     const data = await response.json()
     if (data.chart?.result?.[0]?.meta?.regularMarketPrice) {
       return data.chart.result[0].meta.regularMarketPrice
     }
-    return null
   } catch (error) {
-    console.error('Error fetching USD-INR rate:', error)
-    return null
+    console.warn('Yahoo Finance USD-INR failed, trying ExchangeRate-API fallback:', error)
   }
+
+  // Fallback: ExchangeRate-API (open access, no key, daily updates - sufficient for portfolio)
+  try {
+    const response = await fetch('https://open.er-api.com/v6/latest/USD')
+    if (!response.ok) {
+      const text = await response.text()
+      console.warn(`ExchangeRate-API returned ${response.status}: ${text.slice(0, 80)}`)
+      return null
+    }
+    const data = await response.json()
+    if (data.result === 'success' && typeof data.rates?.INR === 'number') {
+      return data.rates.INR
+    }
+  } catch (error) {
+    console.error('ExchangeRate-API fallback also failed:', error)
+  }
+
+  return null
 }
 
 // Function to fetch stock prices from Yahoo Finance in batches
@@ -57,7 +90,15 @@ async function fetchYahooStockPrices(symbols: string[]): Promise<{
       // Fetch prices in parallel for the current batch
       const pricePromises = batch.map(async (symbol) => {
         try {
-          const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`)
+          const response = await fetch(
+            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}`,
+            YAHOO_FETCH_OPTIONS
+          )
+          if (!response.ok) {
+            const text = await response.text()
+            console.warn(`Yahoo ${symbol} returned ${response.status}: ${text.slice(0, 50)}`)
+            return
+          }
           const data = await response.json()
           
           if (data.chart?.result?.[0]?.meta?.regularMarketPrice) {
@@ -81,9 +122,9 @@ async function fetchYahooStockPrices(symbols: string[]): Promise<{
       
       await Promise.all(pricePromises)
       
-      // Add a small delay between batches to be respectful to Yahoo Finance
+      // Add delay between batches to reduce Yahoo Finance rate limiting (429)
       if (i + BATCH_SIZE < symbols.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000)) // 1 second delay
+        await new Promise(resolve => setTimeout(resolve, 3000)) // 3 second delay
       }
     }
     

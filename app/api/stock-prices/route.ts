@@ -1,24 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { fetchYahooStockPrices } from '@/lib/yahooFinanceUtils'
+import { fetchUSDToINR } from '@/lib/exchangeRateUtils'
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-// Function to fetch USD to INR exchange rate using Yahoo Finance
-async function fetchUSDToINR(): Promise<number | null> {
-  try {
-    const result = await fetchYahooStockPrices(['USDINR=X'])
-    if (result.success && result.prices['USDINR=X']) {
-      return result.prices['USDINR=X'].price
-    }
-    return null
-  } catch (error) {
-    console.error('Error fetching USD-INR rate:', error)
-    return null
-  }
+async function getUSDToINRRate(): Promise<number | null> {
+  const result = await fetchUSDToINR()
+  return result.success ? result.rate : null
 }
 
 // Function to check cache for symbols and return fresh/stale status
@@ -111,7 +103,7 @@ async function storeInCache(prices: Record<string, StockPriceData>): Promise<voi
 
 // Function to convert prices to INR
 async function convertToINR(prices: Record<string, StockPriceData>): Promise<Record<string, StockPriceData>> {
-  const usdToInrRate = await fetchUSDToINR()
+  const usdToInrRate = await getUSDToINRRate()
   
   if (!usdToInrRate) {
     console.warn('Could not fetch USD-INR rate, returning original prices')

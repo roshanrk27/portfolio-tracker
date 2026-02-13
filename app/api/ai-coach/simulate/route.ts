@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
       includeScenarios = true
     } = validationResult.data
 
+    // Log input received
+    console.log('[AI-COACH SIMULATE] Input received:', JSON.stringify({
+      goalId,
+      targetAmount,
+      months,
+      xirrPercent,
+      existingCorpus,
+      stepUpPercent,
+      includeScenarios
+    }, null, 2))
+
     // Calculate base required SIP
     const baseCalculation = calculateRequiredMonthlySIP(
       targetAmount,
@@ -66,32 +77,37 @@ export async function POST(request: NextRequest) {
     )
 
     if (baseCalculation.monthlySIP === 0 && baseCalculation.totalInvested === 0) {
-      return successResponse<SimulationResponse>(
-        {
-          input: {
-            goalId,
-            targetAmount,
-            targetAmount_formatted: formatCurrency(targetAmount),
-            months,
-            months_formatted: formatMonthsToReadable(months),
-            xirrPercent,
-            existingCorpus,
-            existingCorpus_formatted: formatCurrency(existingCorpus),
-            stepUpPercent,
-            includeScenarios
-          },
-          base_calculation: {
-            requiredMonthlySIP: 0,
-            requiredMonthlySIP_formatted: '₹0/month',
-            totalInvested: 0,
-            totalInvested_formatted: formatCurrency(0),
-            finalCorpus: baseCalculation.finalCorpus,
-            finalCorpus_formatted: formatCurrency(baseCalculation.finalCorpus),
-            investment_description: 'Existing corpus is sufficient to meet target'
-          },
-          scenarios: [],
-          _action_items: ['Review investment strategy', 'Consider increasing target amount']
+      const earlyReturnResponse: SimulationResponse = {
+        input: {
+          goalId,
+          targetAmount,
+          targetAmount_formatted: formatCurrency(targetAmount),
+          months,
+          months_formatted: formatMonthsToReadable(months),
+          xirrPercent,
+          existingCorpus,
+          existingCorpus_formatted: formatCurrency(existingCorpus),
+          stepUpPercent,
+          includeScenarios
         },
+        base_calculation: {
+          requiredMonthlySIP: 0,
+          requiredMonthlySIP_formatted: '₹0/month',
+          totalInvested: 0,
+          totalInvested_formatted: formatCurrency(0),
+          finalCorpus: baseCalculation.finalCorpus,
+          finalCorpus_formatted: formatCurrency(baseCalculation.finalCorpus),
+          investment_description: 'Existing corpus is sufficient to meet target'
+        },
+        scenarios: [],
+        _action_items: ['Review investment strategy', 'Consider increasing target amount']
+      }
+
+      // Log output returned
+      console.log('[AI-COACH SIMULATE] Output returned:', JSON.stringify(earlyReturnResponse, null, 2))
+
+      return successResponse<SimulationResponse>(
+        earlyReturnResponse,
         'Existing corpus is already sufficient to meet the target amount. No additional SIP needed.'
       )
     }
@@ -213,6 +229,9 @@ export async function POST(request: NextRequest) {
         summary += `. With ${best.stepUpPercent_formatted} step-up, start at ${best.monthlySIP_formatted}, saving ${best.savings_vs_baseline || ''} overall`
       }
     }
+
+    // Log output returned
+    console.log('[AI-COACH SIMULATE] Output returned:', JSON.stringify(response, null, 2))
 
     return successResponse(response, summary)
 
